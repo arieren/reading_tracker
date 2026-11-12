@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /books/{bookId} {
+      function signedIn() { return request.auth != null; }
+      function ownsBook() { return signedIn() && resource.data.uid == request.auth.uid; }
+      // Transactions may check whether a new document exists. This permits
+      // a missing-document response, never another user's document contents.
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/books/$(bookId)) || ownsBook());
+      allow list: if ownsBook();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if ownsBook() && request.resource.data.uid == resource.data.uid;
+      allow delete: if ownsBook();
+    }
+  }
+}

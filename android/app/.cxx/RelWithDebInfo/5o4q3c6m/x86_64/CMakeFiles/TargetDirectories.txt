@@ -1,2 +1,0 @@
-C:/Users/fight/StudioProjects/reading_tracker/android/app/.cxx/RelWithDebInfo/5o4q3c6m/x86_64/CMakeFiles/edit_cache.dir
-C:/Users/fight/StudioProjects/reading_tracker/android/app/.cxx/RelWithDebInfo/5o4q3c6m/x86_64/CMakeFiles/rebuild_cache.dir

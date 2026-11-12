@@ -28,8 +28,8 @@ android {
         applicationId = "edu.cpp.reading_tracker"
         minSdkVersion = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 15
-        versionName = "1.1.4"
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     signingConfigs {
@@ -47,6 +47,7 @@ android {
         }
     }
 }
+
 
 kotlin {
     compilerOptions {

@@ -1,18 +1,33 @@
-import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/account_button.dart';
+import '../widgets/book_cover.dart';
+
+import 'dart:async';
+
+import '../data/book_repository.dart';
+import '../models/book_codec.dart' as validation;
+import '../services/catalog_service.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:hive/hive.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../models/book.dart';
 
 class AddBookScreen extends StatefulWidget {
-  final Function onBookAdded;
+  final VoidCallback onBookAdded;
 
-  AddBookScreen({required this.onBookAdded});
+  const AddBookScreen({
+    super.key,
+    required this.onBookAdded,
+    this.repository,
+    this.currentUid,
+    this.catalog,
+  });
+  final BookRepository? repository;
+  final String? Function()? currentUid;
+  final CatalogService? catalog;
 
   @override
-  _AddBookScreenState createState() => _AddBookScreenState();
+  State<AddBookScreen> createState() => _AddBookScreenState();
 }
 
 class _AddBookScreenState extends State<AddBookScreen> {
@@ -20,6 +35,15 @@ class _AddBookScreenState extends State<AddBookScreen> {
   final TextEditingController chapterController = TextEditingController();
   final TextEditingController imageUrlController = TextEditingController();
   final TextEditingController linkUrlController = TextEditingController();
+
+  Timer? _searchTimer;
+  int _searchRevision = 0;
+  late final _catalog = widget.catalog ?? CatalogService.instance;
+  bool _isSearching = false;
+  bool _searched = false;
+  String? _searchError;
+  BookRepository get _repository =>
+      widget.repository ?? BookRepository.instance;
 
   String selectedType = 'Novel';
   List<dynamic> searchResults = [];
@@ -29,7 +53,6 @@ class _AddBookScreenState extends State<AddBookScreen> {
   bool _isLoading = false;
 
   final List<String> bookTypes = ['Novel', 'Manga', 'Manhwa', 'Light Novel'];
-  final String _placeholderImage = 'https://placehold.co/600x400/png/?text=Manual\nEntry&font=Oswald';
 
   @override
   void initState() {
@@ -39,6 +62,8 @@ class _AddBookScreenState extends State<AddBookScreen> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
+    _searchRevision++;
     titleController.dispose();
     chapterController.dispose();
     imageUrlController.dispose();
@@ -52,11 +77,17 @@ class _AddBookScreenState extends State<AddBookScreen> {
       appBar: AppBar(
         title: Text(_isManualEntry ? 'Manual Entry' : 'Search & Add'),
         actions: [
+          const AccountButton(),
           TextButton.icon(
             onPressed: () {
               setState(() {
+                _searchTimer?.cancel();
+                _searchRevision++;
                 _isManualEntry = !_isManualEntry;
                 searchResults = [];
+                _isSearching = false;
+                _searched = false;
+                _searchError = null;
                 selectedImage = null;
                 if (!_isManualEntry) {
                   imageUrlController.clear();
@@ -90,21 +121,34 @@ class _AddBookScreenState extends State<AddBookScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildTitleField(),
+        if (!_isManualEntry) ...[
+          if (_isSearching) const LinearProgressIndicator(),
+          if (_searchError != null)
+            Row(
+              children: [
+                Expanded(child: Text(_searchError!)),
+                TextButton(
+                  onPressed: () =>
+                      _searchManga(titleController.text, ++_searchRevision),
+                  child: const Text('Retry'),
+                ),
+              ],
+            )
+          else if (_searched && !_isSearching && searchResults.isEmpty)
+            const Text(
+              'No matches found. Try another title or use Manual Entry.',
+            ),
+        ],
         SizedBox(height: 20),
-        if (!_isManualEntry && searchResults.isNotEmpty)
-          _buildSearchResults(),
-        if (selectedImage != null || _isManualEntry)
-          _buildImagePreview(),
+        if (!_isManualEntry && searchResults.isNotEmpty) _buildSearchResults(),
+        if (selectedImage != null || _isManualEntry) _buildImagePreview(),
         SizedBox(height: 20),
         _buildTypeDropdown(),
         SizedBox(height: 20),
         _buildChapterField(),
         SizedBox(height: 20),
         _buildLinkUrlField(),
-        if (_isManualEntry) ...[
-          SizedBox(height: 20),
-          _buildImageUrlField(),
-        ],
+        if (_isManualEntry) ...[SizedBox(height: 20), _buildImageUrlField()],
         SizedBox(height: 32),
         _buildAddButton(),
       ],
@@ -118,13 +162,26 @@ class _AddBookScreenState extends State<AddBookScreen> {
         labelText: 'Title',
         hintText: 'Enter book title',
         prefixIcon: Icon(Icons.book),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onChanged: (value) {
         if (!_isManualEntry) {
-          _searchManga(value);
+          selectedImage = null;
+          selectedTitle = null;
+          _searchTimer?.cancel();
+          final revision = ++_searchRevision;
+          setState(() {
+            searchResults = [];
+            _isSearching = value.trim().isNotEmpty;
+            _searched = false;
+            _searchError = null;
+          });
+          if (value.trim().isNotEmpty) {
+            _searchTimer = Timer(
+              const Duration(milliseconds: 550),
+              () => _searchManga(value, revision),
+            );
+          }
         }
       },
     );
@@ -137,9 +194,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
         labelText: 'Reading Link (optional)',
         hintText: 'Enter URL to continue reading',
         prefixIcon: Icon(Icons.link),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -192,41 +247,19 @@ class _AddBookScreenState extends State<AddBookScreen> {
 
   Widget _buildImagePreview() {
     final imageUrl = _isManualEntry
-        ? (imageUrlController.text.isNotEmpty ? imageUrlController.text : _placeholderImage)
-        : selectedImage ?? _placeholderImage;
+        ? imageUrlController.text.trim()
+        : selectedImage;
 
     return Center(
       child: Column(
         children: [
-          Container(
-            height: 200,
+          BookCover(
+            imageUrl: imageUrl,
+            type: selectedType,
             width: 150,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Colors.grey.shade200,
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text('Invalid image URL', style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+            height: 200,
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text('Cover Image', style: TextStyle(color: Colors.grey)),
         ],
       ),
@@ -237,9 +270,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
     return InputDecorator(
       decoration: InputDecoration(
         labelText: 'Content Type',
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
       child: DropdownButtonHideUnderline(
@@ -251,11 +282,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
             return DropdownMenuItem(
               value: type,
               child: Row(
-                children: [
-                  _getTypeIcon(type),
-                  SizedBox(width: 8),
-                  Text(type),
-                ],
+                children: [_getTypeIcon(type), SizedBox(width: 8), Text(type)],
               ),
             );
           }).toList(),
@@ -287,9 +314,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
         labelText: 'Current Chapter',
         hintText: 'Enter current chapter number',
         prefixIcon: Icon(Icons.bookmark),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       keyboardType: TextInputType.number,
     );
@@ -302,9 +327,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
         labelText: 'Image URL (optional)',
         hintText: 'Enter cover image URL',
         prefixIcon: Icon(Icons.image),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onChanged: (value) {
         setState(() {});
@@ -314,48 +337,56 @@ class _AddBookScreenState extends State<AddBookScreen> {
 
   Widget _buildAddButton() {
     return ElevatedButton.icon(
-      onPressed: _addBook,
+      onPressed: _isLoading ? null : _addBook,
       icon: Icon(Icons.add),
       label: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Text('Add to Library', style: TextStyle(fontSize: 16)),
       ),
       style: ElevatedButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
-  Future<void> _searchManga(String query) async {
-    if (query.isEmpty) {
-      setState(() {
-        searchResults = [];
-      });
-      return;
-    }
-
+  Future<void> _searchManga(String query, int revision) async {
+    if (!mounted || revision != _searchRevision || _isManualEntry) return;
+    _searchTimer?.cancel();
+    setState(() {
+      _isSearching = true;
+      _searchError = null;
+    });
     try {
-      final response = await http.get(
-        Uri.parse('https://api.jikan.moe/v4/manga?q=$query&limit=5'),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+      final results = await _catalog.search(query);
+      if (mounted && revision == _searchRevision && !_isManualEntry) {
         setState(() {
-          searchResults = data['data'];
+          searchResults = results;
+          _searched = true;
         });
       }
-    } catch (e) {
-      print('Error searching manga: $e');
-      _showErrorSnackbar('Error connecting to anime database');
+    } on Object catch (error) {
+      if (mounted && revision == _searchRevision && !_isManualEntry) {
+        setState(
+          () => _searchError = error is CatalogException
+              ? error.message
+              : 'Cannot connect to search. Check your connection and retry.',
+        );
+      }
+    } finally {
+      if (mounted && revision == _searchRevision && !_isManualEntry) {
+        setState(() => _isSearching = false);
+      }
     }
   }
 
   void _onSelectManga(dynamic manga) {
     setState(() {
+      _searchRevision++;
       selectedTitle = manga['title'];
+      _searchTimer?.cancel();
+      _isSearching = false;
+      _searched = false;
+      _searchError = null;
       selectedImage = manga['images']['jpg']['image_url'];
       titleController.text = selectedTitle!;
       searchResults = [];
@@ -375,77 +406,63 @@ class _AddBookScreenState extends State<AddBookScreen> {
     });
   }
 
-  void _addBook() async {
-    final title = titleController.text.trim();
-    if (title.isEmpty) {
-      _showErrorSnackbar('Please enter a title');
+  Future<void> _addBook() async {
+    if (_isLoading) return;
+    final uid = widget.currentUid != null
+        ? widget.currentUid!()
+        : FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _showErrorSnackbar('Please sign in first.');
       return;
     }
-
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _showErrorSnackbar('Please log in to add a book');
+    final chapter = int.tryParse(chapterController.text.trim());
+    if (chapter == null || chapter < 0) {
+      _showErrorSnackbar('Enter a whole chapter number of zero or greater.');
       return;
     }
-
-    setState(() {
-      _isLoading = true;
-    });
-
+    final image = _isManualEntry
+        ? imageUrlController.text.trim()
+        : selectedImage;
+    final book = Book(
+      title: titleController.text.trim(),
+      type: selectedType,
+      chapter: chapter,
+      imageUrl: image == null || image.isEmpty ? null : image,
+      linkURL: linkUrlController.text.trim(),
+      uid: uid,
+    );
     try {
-      final chapter = int.tryParse(chapterController.text) ?? 1;
-      final uid = user.uid;
-      final imageUrl = selectedImage ?? _placeholderImage;
-      final linkURL = linkUrlController.text.trim();
-
-      final now = DateTime.now();
-
-      final book = Book(
-        title: title,
-        type: selectedType,
-        chapter: chapter,
-        imageUrl: imageUrl,
-        linkURL: linkURL.isNotEmpty ? linkURL : null,
-        uid: uid,
-        lastRead: now,
-      );
-
-      final box = Hive.box<Book>('books');
-      await box.add(book);
-
-      final docRef = await FirebaseFirestore.instance.collection("books").add({
-        "title": title,
-        "type": selectedType,
-        "chapter": chapter,
-        "imageUrl": imageUrl,
-        "linkURL": linkURL,
-        "uid": uid,
-        "lastRead": now.toIso8601String(),
-      });
-
-      book.id = docRef.id;
-      await book.save();
-
+      validation.validateBook(book);
+    } on FormatException catch (e) {
+      _showErrorSnackbar(e.message.toString());
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _repository.save(book);
+      unawaited(_repository.sync(force: true));
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$title added to your library'),
-          backgroundColor: Colors.green,
+        const SnackBar(
+          content: Text(
+            'Book saved on this device. Cloud sync will retry if needed.',
+          ),
         ),
       );
-
       _resetForm();
       widget.onBookAdded();
-    } catch (e) {
-      print('Error adding book: $e');
-      _showErrorSnackbar('Failed to add book. Please try again.');
+    } on Object catch (error) {
+      debugPrint('Saving book failed: ${error.runtimeType}');
+      if (mounted) _showErrorSnackbar('Unable to save. Please try again.');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _resetForm() {
+    _searchTimer?.cancel();
+    _searchRevision++;
+    imageUrlController.clear();
     titleController.clear();
     chapterController.text = '1';
     linkUrlController.clear();
@@ -453,15 +470,15 @@ class _AddBookScreenState extends State<AddBookScreen> {
       selectedImage = null;
       selectedTitle = null;
       searchResults = [];
+      _isSearching = false;
+      _searched = false;
+      _searchError = null;
     });
   }
 
   void _showErrorSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 }

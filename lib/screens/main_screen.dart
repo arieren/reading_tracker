@@ -1,15 +1,20 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:material_ui/material_ui.dart';
+
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'add_book_screen.dart';
-import 'account_screen.dart';
+import '../data/book_repository.dart';
 
 class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
   @override
-  _MainScreenState createState() => _MainScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  Timer? _retryTimer;
   int _selectedIndex = 0;
   late List<Widget> _pages;
 
@@ -17,6 +22,28 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _initializePages();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(BookRepository.instance.sync());
+    _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final repository = BookRepository.instance;
+      if (repository.pendingCount > 0 || repository.lastError != null) {
+        unawaited(repository.sync(force: true));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(BookRepository.instance.sync(force: true));
+    }
   }
 
   void _initializePages() {
@@ -25,38 +52,6 @@ class _MainScreenState extends State<MainScreen> {
       LibraryScreen(),
       AddBookScreen(onBookAdded: _onBookAdded),
     ];
-  }
-
-  void _showInfoDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Recently Visited'),
-          content: const SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('Here you\'ll find a record of your recently viewed items.'),
-                SizedBox(height: 12),
-                Text('If a link is associated with an item, tapping "Continue" will open it and mark your reading progress.'),
-                SizedBox(height: 8),
-                Text('Otherwise, "Continue" will simply update your last read time.'),
-                SizedBox(height: 12),
-                Text('For an optimal experience, consider using ad-free links.'),
-                SizedBox(height: 12),
-                Text('To preserve your current URL, tap the save icon in the top right. We recommend saving frequently!'),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   void _onBookAdded() {
@@ -74,39 +69,42 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: _buildAppBar(),
-      body: _pages[_selectedIndex],
+      body: Column(
+        children: [
+          AnimatedBuilder(
+            animation: BookRepository.instance,
+            builder: (context, _) {
+              final repository = BookRepository.instance;
+              if (repository.pendingCount == 0 &&
+                  repository.lastError == null) {
+                return const SizedBox.shrink();
+              }
+              return SafeArea(
+                bottom: false,
+                child: ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.cloud_off),
+                  title: Text(
+                    repository.lastError ??
+                        '${repository.pendingCount} changes saved locally; waiting for cloud sync.',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Retry cloud sync',
+                    onPressed: () async {
+                      await repository.sync(force: true);
+                    },
+                    icon: const Icon(Icons.sync),
+                  ),
+                ),
+              );
+            },
+          ),
+          Expanded(
+            child: IndexedStack(index: _selectedIndex, children: _pages),
+          ),
+        ],
+      ),
       bottomNavigationBar: _buildBottomNavBar(),
-    );
-  }
-
-  AppBar _buildAppBar() {
-    return AppBar(
-      leading: _selectedIndex == 0
-          ? IconButton(
-        icon: Icon(Icons.info_outline),
-        onPressed: () {
-          _showInfoDialog(context);
-        },
-        tooltip: 'Home Screen Info',
-      )
-          : null,
-      title: null,
-      centerTitle: true,
-      elevation: 2,
-      actions: [
-        IconButton(
-          icon: Icon(Icons.account_circle),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => AccountScreen()),
-            );
-          },
-          tooltip: 'Account',
-        ),
-        SizedBox(width: 8),
-      ],
     );
   }
 
@@ -115,7 +113,7 @@ class _MainScreenState extends State<MainScreen> {
       decoration: BoxDecoration(
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
+            color: Colors.grey.withValues(alpha: 0.3),
             blurRadius: 8,
             offset: Offset(0, -2),
           ),
