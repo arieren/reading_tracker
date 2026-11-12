@@ -11,6 +11,9 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  late final Future<void> _googleSignInInitialization;
+
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
@@ -18,6 +21,12 @@ class _LoginPageState extends State<LoginPage> {
   String? _infoMessage;
   String? _infoMessage2;
   bool _isPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _googleSignInInitialization = _googleSignIn.initialize();
+  }
 
   bool _isEmailValid(String email) {
     final emailRegex = RegExp(
@@ -32,13 +41,12 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _signInWithGoogle() async {
     try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return;
+      await _googleSignInInitialization;
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
