@@ -10,6 +10,8 @@ import 'package:reading_tracker/screens/add_book_screen.dart';
 import 'package:reading_tracker/services/auth_service.dart';
 import 'package:reading_tracker/widgets/auth_form.dart';
 import 'package:reading_tracker/widgets/book_cover.dart';
+import 'package:reading_tracker/widgets/book_editor.dart';
+import 'package:reading_tracker/screens/reader_screen.dart';
 
 import 'book_repository_test.dart' show MemoryCloud;
 
@@ -47,6 +49,80 @@ void main() {
     repository.dispose();
     await Hive.close();
     await directory.delete(recursive: true);
+  });
+  testWidgets('editor saves progress without trimming saved non-URL text', (
+    tester,
+  ) async {
+    const savedText = '  number notes  ';
+    final book = Book(
+      uid: 'alice',
+      id: 'legacy-text',
+      title: 'Story',
+      type: 'Manga',
+      chapter: 1,
+      linkURL: savedText,
+    );
+    await tester.runAsync(() => books.add(book));
+    BookRepository.instance = repository;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: ElevatedButton(
+              onPressed: () => showBookEditor(context, book),
+              child: const Text('Edit'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Saved text will be kept'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Chapter'), '9');
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Save'));
+      for (
+        var attempt = 0;
+        attempt < 100 && repository.userBooks.single.chapter != 9;
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(repository.userBooks.single.chapter, 9);
+    expect(repository.userBooks.single.linkURL, savedText);
+    expect(find.text('Edit Book'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets('saved text is never opened as a reader URL', (tester) async {
+    final book = Book(
+      title: 'Story',
+      type: 'Manga',
+      chapter: 1,
+      linkURL: 'number notes',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: ElevatedButton(
+              onPressed: () => openBookReader(context, book),
+              child: const Text('Read'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Read'));
+    await tester.pump();
+    expect(find.text('Add a valid reading link first.'), findsOneWidget);
+    expect(find.byType(ReaderScreen), findsNothing);
+    expect(book.linkURL, 'number notes');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
     'login preserves password bytes and prevents overlapping submissions',

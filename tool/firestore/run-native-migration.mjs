@@ -26,10 +26,10 @@ try {
       type: 'Manga',
       chapter: 1,
       imageUrl: '',
-      linkURL: '',
+      linkURL: '  number notes  ',
       lastRead: '2025-11-13T10:20:33.315090Z',
     });
-  await migrateUser(db, uid);
+  await migrateUser(db, uid, {preserveLegacyLinkText:true});
   const args = [
     'test',
     'integration_test/storage_migration_test.dart',

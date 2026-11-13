@@ -11,7 +11,7 @@ import '../data/book_repository.dart';
 
 Future<void> openBookReader(BuildContext context, Book book) async {
   final url = book.linkURL;
-  if (url == null || url.isEmpty || !validWebUrl(url)) {
+  if (url == null || url.trim().isEmpty || !validWebUrl(url)) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Add a valid reading link first.')),
     );

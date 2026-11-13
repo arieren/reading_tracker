@@ -23,6 +23,7 @@ const { values } = parseArgs({
     'dry-run': { type: 'boolean' },
     'backup-dir': { type: 'string' },
     'confirm-project': { type: 'string' },
+    'preserve-legacy-link-text': { type: 'boolean' },
   },
 });
 const project = values.project;
@@ -69,6 +70,7 @@ try {
     );
   } else if (values.apply) {
     const result = await migrateUser(db, values.uid, {
+      preserveLegacyLinkText: values['preserve-legacy-link-text'] === true,
       beforeCopy: async (plan) => {
         const folder = resolve(values['backup-dir']);
         await mkdir(folder, { recursive: true });
@@ -97,7 +99,7 @@ try {
     });
     console.log(JSON.stringify(result));
   } else {
-    const plan = await inspectUser(db, values.uid);
+    const plan = await inspectUser(db, values.uid, { preserveLegacyLinkText: values['preserve-legacy-link-text'] === true });
     console.log(
       JSON.stringify(
         {
@@ -111,6 +113,7 @@ try {
           destinationBooks: plan.newBooks.length,
           destinationMarkers: plan.newMarkers.length,
           collisions: plan.collisions,
+          preservedLegacyLinks: plan.preservedLegacyLinks,
           sourceHash: plan.sourceHash,
         },
         null,

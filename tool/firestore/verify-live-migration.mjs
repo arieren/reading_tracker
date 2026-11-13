@@ -125,6 +125,7 @@ try {
   await setDoc(doc(old.db, 'books', second), {
     ...original,
     title: 'Manual cover rehearsal',
+    linkURL: '  number notes  ',
     chapter: 0,
     imageUrl:
       'https://placehold.co/600x400/png/?text=Manual\nEntry&font=Oswald',
@@ -133,8 +134,8 @@ try {
   await db
     .doc(`book_deletions/${deleted}`)
     .set({ uid, deletedAt: Timestamp.now() });
-  const before = await inspectUser(db, uid);
-  const args = ['--project', projectId, '--uid', uid];
+  const before = await inspectUser(db, uid, {preserveLegacyLinkText:true});
+  const args = ['--project', projectId, '--uid', uid, '--preserve-legacy-link-text'];
   const dry = JSON.parse(await command([...args, '--dry-run']));
   assert.equal(dry.liveBooks, 2);
   assert.equal(dry.deletedBooksExcluded, 1);
@@ -178,7 +179,7 @@ try {
     data: decodeBackupValue(row.data),
   }));
   assert.equal(fingerprint(restored), fingerprint(before.books));
-  const migrated = await inspectUser(db, uid);
+  const migrated = await inspectUser(db, uid, {preserveLegacyLinkText:true});
   assert.equal(migrated.state, 'ready');
   assert.equal(migrated.newBooks.length, 2);
   assert.equal(migrated.books.length, 3);
@@ -242,6 +243,7 @@ try {
   );
   assert.equal(repeat.alreadyReady, true);
   assert.equal((await getDocFromServer(secondRef)).data().chapter, 8);
+  assert.equal((await getDocFromServer(secondRef)).data().linkURL, '  number notes  ');
   pass(
     'permanent nested deletion and repeat-migration guards protect post-cutover changes',
   );

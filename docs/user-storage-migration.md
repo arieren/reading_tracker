@@ -95,4 +95,8 @@ This starts local Auth/Firestore emulators under `demo-reading-tracker`, creates
 
 ## Production gates
 
+The [ownership compatibility bridge](ownership-rollout.md) preserves older clients' root record formats while restricting ownership. It also documents the explicit, reviewed policy for copying historical non-URL link text without changing it. This is a rules-only rollout before any production account cutover.
+
+The [read-only audit/backup tools](production-backup.md) now capture complete Firestore document snapshots and verify restoration locally. Findings and verification reports are private backup artifacts; unresolved production findings must be addressed before lifting the migration write guard.
+
 Before any production write: obtain/verify a complete backup, audit legacy records including missing/invalid UIDs, release and accept the migration-aware client, establish an update path for older app versions without discarding offline data, rehearse a live staging UID, and review reverse-migration recovery. Only then extend the currently staging-only apply guard through a separate reviewed change and migrate a small pilot account first. No collection-wide migration is scheduled or automatic.

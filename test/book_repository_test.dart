@@ -123,6 +123,56 @@ void main() {
       Book(title: title, chapter: chapter, type: 'Manga', uid: uid);
 
   test(
+    'chapter and read-time edits retain unchanged saved reading text exactly',
+    () async {
+      const savedText = '  1 2 3 4 5  ';
+      final original = draft()
+        ..id = 'legacy-text'
+        ..linkURL = savedText;
+      await books.add(original);
+      cloud.records['legacy-text'] = encodeBook(original);
+      final edited = draft(chapter: 9)
+        ..id = original.id
+        ..linkURL = savedText;
+      await repository.save(edited, original: original);
+      expect(repository.userBooks.single.linkURL, savedText);
+      expect(
+        (outbox.get('legacy-text')['changes'] as Map).containsKey('linkURL'),
+        isFalse,
+      );
+      await repository.markRead(repository.userBooks.single);
+      expect(await repository.sync(force: true), isTrue);
+      expect(cloud.records['legacy-text']!['linkURL'], savedText);
+      expect(cloud.records['legacy-text']!['chapter'], 9);
+    },
+  );
+  test('new or changed non-URL reading text is rejected but valid replacement works', () async {
+    final fresh = draft()..linkURL = 'new notes';
+    await expectLater(repository.save(fresh), throwsFormatException);
+    expect(fresh.id, isNull);
+    final original = draft()
+      ..id = 'legacy-text'
+      ..linkURL = 'old notes';
+    await books.add(original);
+    await expectLater(
+      repository.save(
+        draft()
+          ..id = original.id
+          ..linkURL = 'different notes',
+        original: original,
+      ),
+      throwsFormatException,
+    );
+    await repository.save(
+      draft()
+        ..id = original.id
+        ..linkURL = 'https://example.com/read',
+      original: original,
+    );
+    expect(repository.userBooks.single.linkURL, 'https://example.com/read');
+  });
+
+  test(
     'pending Hive edits survive migration pause and upload to the new path',
     () async {
       final db = FakeFirebaseFirestore();

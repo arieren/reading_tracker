@@ -56,7 +56,7 @@ async function readPages(query) {
     cursor = snapshot.docs.at(-1);
   }
 }
-function validate(row, uid, kind) {
+function validate(row, uid, kind, { preserveLegacyLinkText = false } = {}) {
   const data = row.data;
   if (data.uid !== uid)
     throw new Error(`Invalid ownership in ${kind}/${row.id}`);
@@ -98,7 +98,7 @@ function validate(row, uid, kind) {
       value != null &&
       (typeof value !== 'string' ||
         value.length > 4096 ||
-        (value !== '' && !/^https?:\/\//s.test(value)))
+        (value !== '' && !/^https?:\/\//s.test(value) && !(name === 'linkURL' && preserveLegacyLinkText)))
     ) {
       throw new Error(`Invalid ${name} in ${row.id}`);
     }
@@ -124,12 +124,16 @@ function validate(row, uid, kind) {
     throw new Error(`Invalid revision metadata in ${row.id}`);
   }
 }
+
+export function validateMigrationRecord(row, uid, kind, options) {
+  validate(row, uid, kind, options);
+}
 const metadata = (db, uid) => db.collection('storage_migrations').doc(uid);
 const job = (db, uid) => db.collection('account_deletions').doc(uid);
 const target = (db, uid, name) =>
   db.collection('users').doc(uid).collection(name);
 
-export async function inspectUser(db, uid) {
+export async function inspectUser(db, uid, options = {}) {
   checkUid(uid);
   const [route, deletion, books, markers, newBooks, newMarkers, parent] =
     await Promise.all([
@@ -150,7 +154,7 @@ export async function inspectUser(db, uid) {
   const state = route.data()?.state ?? 'legacy';
   if (!['legacy', 'copying', 'ready'].includes(state))
     throw new Error('Unknown migration state.');
-  for (const row of books) validate(row, uid, 'books');
+  for (const row of books) validate(row, uid, 'books', options);
   for (const row of markers) validate(row, uid, 'book_deletions');
   const removed = new Set(markers.map((row) => row.id));
   // A marker wins over a retained old book. No deleted ID is resurrected.
@@ -181,6 +185,9 @@ export async function inspectUser(db, uid) {
     newBooks,
     newMarkers,
     collisions,
+    preservedLegacyLinks: options.preserveLegacyLinkText
+      ? liveBooks.filter(row => typeof row.data.linkURL === 'string' && row.data.linkURL !== '' && !/^https?:\/\//s.test(row.data.linkURL)).map(row => row.id)
+      : [],
     excludedDeletedBooks: books
       .filter((row) => removed.has(row.id))
       .map((row) => row.id),
@@ -217,6 +224,7 @@ export function backupPayload(plan, projectId) {
     uid: plan.uid,
     createdAt: new Date().toISOString(),
     sourceHash: plan.sourceHash,
+    preservedLegacyLinks: plan.preservedLegacyLinks,
     routing: encode(plan.routeData),
     collections: Object.fromEntries(
       [
@@ -250,9 +258,10 @@ export function decodeBackupValue(value) {
 export async function migrateUser(
   db,
   uid,
-  { beforeCopy = async () => {}, afterCopy = async () => {} } = {},
+  { beforeCopy = async () => {}, afterCopy = async () => {}, preserveLegacyLinkText = false } = {},
 ) {
-  let plan = await inspectUser(db, uid);
+  const policy = { preserveLegacyLinkText };
+  let plan = await inspectUser(db, uid, policy);
   if (plan.state === 'ready') return { alreadyReady: true }; // Never recopy stale legacy data after cutover.
   if (plan.collisions.length)
     throw new Error(`Destination conflicts: ${plan.collisions.join(', ')}`);
@@ -279,7 +288,7 @@ export async function migrateUser(
     return id;
   });
   // The first inspection was advisory; only this frozen snapshot is authoritative.
-  plan = await inspectUser(db, uid);
+  plan = await inspectUser(db, uid, policy);
   if (plan.collisions.length)
     throw new Error(
       'Destination conflicts after freezing; leave copying state for review.',
@@ -309,7 +318,7 @@ export async function migrateUser(
       await afterCopy(name, row.id);
     }
   }
-  const verified = await inspectUser(db, uid);
+  const verified = await inspectUser(db, uid, policy);
   if (
     verified.sourceHash !== plan.sourceHash ||
     verified.collisions.length ||

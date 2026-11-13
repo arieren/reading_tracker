@@ -14,6 +14,15 @@ class BookConflictException implements Exception {
   final List<String> fields;
 }
 
+class _BookOwnershipException implements Exception {}
+
+class _TransactionResult<T> {
+  _TransactionResult.success(this.value) : failure = null;
+  _TransactionResult.failure(this.failure) : value = null;
+  final T? value;
+  final Object? failure;
+}
+
 abstract interface class BookCloud {
   String newId();
   Future<Map<String, Map<String, dynamic>>> fetch(String uid);
@@ -44,6 +53,32 @@ class FirestoreBookCloud implements BookCloud {
       _db.collection('books');
   BookStorage get _storage => BookStorage(_db, enabled: userBookStorage);
   BookStorageLayout? _cachedLayout;
+
+  Future<T> _transaction<T>(Future<T> Function(Transaction) action) async {
+    // Native transaction completion can race a Dart callback exception. Carry
+    // expected refusals as results and throw them only after native completion.
+    // All these refusals are checked before adding any mutation commands.
+    final result = await _db.runTransaction<_TransactionResult<T>>((
+      transaction,
+    ) async {
+      try {
+        return _TransactionResult.success(await action(transaction));
+      } on Object catch (error) {
+        if (error is DeletedBookException ||
+            error is AccountDeletionPendingException ||
+            error is BookConflictException ||
+            error is StorageMigrationInProgress ||
+            error is _BookOwnershipException) {
+          return _TransactionResult.failure(error);
+        }
+        rethrow;
+      }
+    });
+    final failure = result.failure;
+    if (failure != null) throw failure;
+    return result.value as T;
+  }
+
   String? _cachedUid;
   final _snapshot = <String, Map<String, dynamic>>{};
   Timestamp? _bookCursor, _deletionCursor;
@@ -135,7 +170,7 @@ class FirestoreBookCloud implements BookCloud {
     bool allowCreate = true,
   }) async {
     final patch = changes ?? data;
-    final result = await _db.runTransaction<Map<String, dynamic>>((
+    final result = await _transaction<Map<String, dynamic>>((
       transaction,
     ) async {
       final accountDeletion = await transaction.get(
@@ -156,7 +191,7 @@ class FirestoreBookCloud implements BookCloud {
           ? normalizeCloudBook(snapshot.data()!)
           : null;
       if (remote != null && remote['uid'] != data['uid']) {
-        throw StateError('This book belongs to another account.');
+        throw _BookOwnershipException();
       }
       if (remote != null &&
           operationId != null &&
@@ -198,7 +233,7 @@ class FirestoreBookCloud implements BookCloud {
 
   @override
   Future<void> delete(String id, {required String uid}) async {
-    await _db.runTransaction((transaction) async {
+    await _transaction<void>((transaction) async {
       final accountDeletion = await transaction.get(
         _db.collection('account_deletions').doc(uid),
       );
@@ -209,11 +244,11 @@ class FirestoreBookCloud implements BookCloud {
       final existing = await transaction.get(ref);
       final deleted = await transaction.get(marker);
       if (deleted.exists) {
-        if (deleted.data()?['uid'] != uid) throw StateError('Invalid owner.');
+        if (deleted.data()?['uid'] != uid) throw _BookOwnershipException();
         return;
       }
       if (existing.exists && existing.data()?['uid'] != uid) {
-        throw StateError('Invalid owner.');
+        throw _BookOwnershipException();
       }
       transaction.set(marker, {
         'uid': uid,

@@ -125,13 +125,17 @@ class BookRepository extends ChangeNotifier {
       _requireOwner(original);
       if (!original.isInBox) throw StateError('This book no longer exists.');
     }
-    validateBook(b);
+    final existing =
+        original ??
+        (b.id == null
+            ? null
+            : books.values
+                  .where((v) => v.id == b.id && v.uid == b.uid)
+                  .firstOrNull);
+    validateBook(b, original: existing);
     b.id ??= original?.id ?? cloud.newId();
     b.type = normalizeBookType(b.type);
     final data = encodeBook(b);
-    final existing =
-        original ??
-        books.values.where((v) => v.id == b.id && v.uid == b.uid).firstOrNull;
     final previous = existing == null
         ? <String, dynamic>{}
         : encodeBook(existing);

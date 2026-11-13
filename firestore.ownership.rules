@@ -1,0 +1,127 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function active() {
+      return signedIn() && !exists(/databases/$(database)/documents/account_deletions/$(request.auth.uid));
+    }
+    function deleting() { return signedIn() && exists(/databases/$(database)/documents/account_deletions/$(request.auth.uid)); }
+    function owner(data) { return signedIn() && data.uid == request.auth.uid; }
+    // Root records retain legacy field compatibility with immutable ownership.
+    // Migrated records enforce schema/revisions and preserve unchanged saved text.
+    function validLink(value) {
+      // Legacy manual covers included a newline in the placeholder query.
+      return value == null || (value is string && value.size() <= 4096
+        && (value == '' || value.matches('(?s)https?://.+')));
+    }
+    function validReadTime(value) {
+      return value == null || value is timestamp || (value is string && value.size() <= 64
+        && value.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})?'));
+    }
+    function validReadingLink(data) {
+      let value = data.get('linkURL', null);
+      return value == null || (value is string && value.size() <= 4096
+        && (value == '' || value.matches('(?s)https?://.+')))
+        || (request.method == 'update' && value is string && value.size() <= 4096
+          && value == resource.data.get('linkURL', null));
+    }
+    function validBook(data) {
+      return data.keys().hasAll(['uid', 'title', 'type', 'chapter'])
+        && data.keys().hasOnly(['uid', 'title', 'type', 'chapter', 'imageUrl', 'linkURL', 'lastRead', 'revision', 'updatedAt', 'lastOperationId'])
+        && data.uid is string && data.uid.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 500
+        && data.title.matches('(?s).*[^\\s].*')
+        && data.type in ['Novel', 'Manga', 'Manhwa', 'Light Novel']
+        && data.chapter is int && data.chapter >= 0 && data.chapter <= 2147483647
+        && validLink(data.get('imageUrl', null)) && validReadingLink(data)
+        && validReadTime(data.get('lastRead', null));
+    }
+    function versioned(data) {
+      return data.keys().hasAll(['revision', 'updatedAt', 'lastOperationId'])
+        && data.revision is int && data.revision > 0 && data.updatedAt is timestamp
+        && data.lastOperationId is string && data.lastOperationId.size() > 0 && data.lastOperationId.size() <= 128;
+    }
+    // Administrator-owned routing; unrecognized states fail closed.
+    function phase() {
+      return exists(/databases/$(database)/documents/storage_migrations/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/storage_migrations/$(request.auth.uid)).data.state : 'legacy';
+    }
+    function legacyRead() { return deleting() || phase() in ['legacy', 'copying']; }
+    match /books/{bookId} {
+      allow get: if signedIn() && legacyRead() && (!exists(/databases/$(database)/documents/books/$(bookId)) || owner(resource.data));
+      allow list: if signedIn() && legacyRead() && owner(resource.data);
+      // Ownership-only bridge: legacy clients may retain their existing fields
+      // and text values. Version/schema validation remains on migrated books.
+      allow create: if active() && phase() == 'legacy' && owner(request.resource.data)
+        && !exists(/databases/$(database)/documents/book_deletions/$(bookId));
+      allow update: if active() && phase() == 'legacy'
+        && owner(resource.data) && owner(request.resource.data)
+        && !exists(/databases/$(database)/documents/book_deletions/$(bookId));
+      // Old clients delete directly and cannot create an atomic marker.
+      allow delete: if signedIn() && (deleting() || (active() && phase() == 'legacy'))
+        && (!exists(/databases/$(database)/documents/books/$(bookId)) || owner(resource.data));
+    }
+    match /book_deletions/{bookId} {
+      allow get: if signedIn() && legacyRead() && (!exists(/databases/$(database)/documents/book_deletions/$(bookId)) || owner(resource.data));
+      allow list: if signedIn() && legacyRead() && owner(resource.data);
+      allow create: if active() && phase() == 'legacy' && owner(request.resource.data)
+        && request.resource.data.keys().hasOnly(['uid', 'deletedAt'])
+        && request.resource.data.deletedAt == request.time
+        && (!exists(/databases/$(database)/documents/books/$(bookId)) || owner(get(/databases/$(database)/documents/books/$(bookId)).data))
+        && !existsAfter(/databases/$(database)/documents/books/$(bookId));
+      allow update: if false;
+      allow delete: if deleting() && owner(resource.data);
+    }
+    match /account_deletions/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid && phase() in ['legacy', 'ready']
+        && request.auth.token.auth_time >= request.time.toMillis() / 1000 - 300
+        && request.resource.data.keys().hasOnly(['uid', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == uid && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status == 'data-cleared' && request.resource.data.updatedAt == request.time;
+      allow list, delete: if false;
+    }
+
+    match /storage_migrations/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow delete: if signedIn() && request.auth.uid == uid && deleting()
+        && get(/databases/$(database)/documents/account_deletions/$(uid)).data.status == 'data-cleared';
+      allow list, create, update: if false;
+    }
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update: if false;
+      allow delete: if signedIn() && request.auth.uid == uid && deleting()
+        && get(/databases/$(database)/documents/account_deletions/$(uid)).data.status == 'data-cleared';
+      match /books/{bookId} {
+        allow get, list: if signedIn() && request.auth.uid == uid && (phase() == 'ready' || deleting());
+        allow create: if active() && request.auth.uid == uid && phase() == 'ready'
+          && owner(request.resource.data) && validBook(request.resource.data) && versioned(request.resource.data)
+          && request.resource.data.revision == 1 && request.resource.data.updatedAt == request.time
+          && !exists(/databases/$(database)/documents/users/$(uid)/book_deletions/$(bookId));
+        allow update: if active() && request.auth.uid == uid && phase() == 'ready'
+          && owner(resource.data) && owner(request.resource.data)
+          && validBook(request.resource.data) && versioned(request.resource.data)
+          && request.resource.data.revision == resource.data.get('revision', 0) + 1
+          && request.resource.data.updatedAt == request.time
+          && !exists(/databases/$(database)/documents/users/$(uid)/book_deletions/$(bookId));
+        allow delete: if signedIn() && request.auth.uid == uid && owner(resource.data)
+          && (deleting() || (phase() == 'ready' && active() && getAfter(/databases/$(database)/documents/users/$(uid)/book_deletions/$(bookId)).data.uid == uid));
+      }
+      match /book_deletions/{bookId} {
+        allow get, list: if signedIn() && request.auth.uid == uid && (phase() == 'ready' || deleting());
+        allow create: if active() && request.auth.uid == uid && phase() == 'ready'
+          && owner(request.resource.data) && request.resource.data.keys().hasOnly(['uid', 'deletedAt'])
+          && request.resource.data.deletedAt == request.time
+          && (!exists(/databases/$(database)/documents/users/$(uid)/books/$(bookId))
+            || owner(get(/databases/$(database)/documents/users/$(uid)/books/$(bookId)).data))
+          && !existsAfter(/databases/$(database)/documents/users/$(uid)/books/$(bookId));
+        allow update: if false;
+        allow delete: if deleting() && request.auth.uid == uid && owner(resource.data);
+      }
+    }
+  }
+}

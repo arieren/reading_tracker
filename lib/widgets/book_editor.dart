@@ -56,7 +56,9 @@ class _BookEditorState extends State<_BookEditor> {
         title: _title.text.trim(),
         type: _type,
         chapter: chapter,
-        linkURL: _link.text.trim(),
+        linkURL: _link.text == original.linkURL
+            ? original.linkURL
+            : _link.text.trim(),
         imageUrl: _image.text.trim(),
         lastRead: original.lastRead,
       );
@@ -100,8 +102,10 @@ class _BookEditorState extends State<_BookEditor> {
             ),
             TextField(
               controller: _link,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Reading link (optional)',
+                helperText: validWebUrl(widget.book.linkURL) ? null : 'Saved text will be kept. Replace it with a full web address to use it as a link.',
+                helperMaxLines: 3,
               ),
             ),
             TextField(

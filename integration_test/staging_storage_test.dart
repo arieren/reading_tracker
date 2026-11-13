@@ -81,6 +81,8 @@ void main() {
           type: source.type,
           chapter: chapter ?? source.chapter,
           lastRead: source.lastRead,
+          linkURL: source.linkURL,
+          imageUrl: source.imageUrl,
         );
         await repository.save(
           Book(
@@ -94,6 +96,10 @@ void main() {
         expect(await repository.sync(force: true), isTrue);
         final id = repository.userBooks.single.id!;
         final ref = legacyDb.collection('books').doc(id);
+        const savedText = '  number notes  ';
+        await ref.update({'linkURL': savedText});
+        expect(await repository.sync(force: true), isTrue);
+        expect(repository.userBooks.single.linkURL, savedText);
         expect(
           (await ref.get(const GetOptions(source: Source.server)))
               .data()!['lastRead'],
@@ -121,6 +127,7 @@ void main() {
         }
         expect(await repository.sync(force: true), isTrue);
         expect(repository.pendingCount, 0);
+        expect(repository.userBooks.single.linkURL, savedText);
         expect(
           (await ref.get(const GetOptions(source: Source.server)))
               .data()!['chapter'],

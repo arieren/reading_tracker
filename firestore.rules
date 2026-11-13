@@ -7,6 +7,13 @@ service cloud.firestore {
     }
     function deleting() { return signedIn() && exists(/databases/$(database)/documents/account_deletions/$(request.auth.uid)); }
     function owner(data) { return signedIn() && data.uid == request.auth.uid; }
+    function validReadingLink(data) {
+      let value = data.get('linkURL', null);
+      return value == null || (value is string && value.size() <= 4096
+        && (value == '' || value.matches('(?s)https?://.+')))
+        || (request.method == 'update' && value is string && value.size() <= 4096
+          && value == resource.data.get('linkURL', null));
+    }
     function validBook(data) {
       return data.keys().hasAll(['uid', 'title', 'type', 'chapter', 'imageUrl', 'linkURL', 'lastRead', 'revision', 'updatedAt', 'lastOperationId'])
         && data.keys().hasOnly(['uid', 'title', 'type', 'chapter', 'imageUrl', 'linkURL', 'lastRead', 'revision', 'updatedAt', 'lastOperationId'])
@@ -16,7 +23,7 @@ service cloud.firestore {
         && data.type in ['Novel', 'Manga', 'Manhwa', 'Light Novel']
         && data.chapter is int && data.chapter >= 0 && data.chapter <= 2147483647
         && (data.imageUrl == null || (data.imageUrl is string && data.imageUrl.size() <= 4096 && (data.imageUrl == '' || data.imageUrl.matches('https?://[^/ ].*'))))
-        && (data.linkURL == null || (data.linkURL is string && data.linkURL.size() <= 4096 && (data.linkURL == '' || data.linkURL.matches('https?://[^/ ].*'))))
+        && validReadingLink(data)
         && (data.lastRead == null || data.lastRead is timestamp)
         && data.revision is int && data.revision > 0
         && data.updatedAt == request.time

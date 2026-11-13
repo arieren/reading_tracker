@@ -73,7 +73,7 @@ Book decodeBook(String id, Map<String, dynamic> data) {
   );
 }
 
-void validateBook(Book b) {
+void validateBook(Book b, {Book? original}) {
   if (b.title.trim().isEmpty) throw const FormatException('Enter a title.');
   if (b.title.trim().length > 500) {
     throw const FormatException('Titles must be 500 characters or fewer.');
@@ -81,7 +81,13 @@ void validateBook(Book b) {
   if (b.chapter < 0 || b.chapter > 2147483647) {
     throw const FormatException('Chapter must be zero or greater.');
   }
-  if (!validWebUrl(b.linkURL) || !validWebUrl(b.imageUrl)) {
+  final keptReadingText =
+      original != null &&
+      original.uid == b.uid &&
+      original.id == b.id &&
+      original.linkURL == b.linkURL;
+  if ((!validWebUrl(b.linkURL) && !keptReadingText) ||
+      !validWebUrl(b.imageUrl)) {
     throw const FormatException('Links must be valid http or https URLs.');
   }
   if ((b.linkURL?.length ?? 0) > 4096 || (b.imageUrl?.length ?? 0) > 4096) {

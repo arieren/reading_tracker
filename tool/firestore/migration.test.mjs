@@ -362,6 +362,19 @@ test('malformed historical fields abort without silently rewriting them', async 
     false,
   );
 });
+test('explicit preservation policy copies saved non-URL text without changing a byte', async () => {
+  const text = '  1 2 3 4 5  ';
+  await admin.doc('books/a').update({linkURL:text});
+  await assert.rejects(migrateUser(admin,'alice'),/Invalid linkURL/);
+  const plan=await inspectUser(admin,'alice',{preserveLegacyLinkText:true});
+  assert.deepEqual(plan.preservedLegacyLinks,['a']);
+  await migrateUser(admin,'alice',{preserveLegacyLinkText:true});
+  assert.equal((await admin.doc('books/a').get()).data().linkURL,text);
+  assert.equal((await admin.doc('users/alice/books/a').get()).data().linkURL,text);
+  const ref=doc(client('alice'),'users/alice/books/a');
+  await assertSucceeds(updateDoc(ref,{chapter:8,revision:1,updatedAt:serverTimestamp(),lastOperationId:'progress'}));
+  await assertFails(updateDoc(ref,{linkURL:'changed text',revision:2,updatedAt:serverTimestamp(),lastOperationId:'invalid'}));
+});
 test('unsafe revision numbers are rejected instead of rounded during copying', async () => {
   await admin
     .doc('books/a')

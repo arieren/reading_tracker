@@ -14,7 +14,52 @@ Map<String, dynamic> book({int chapter = 1, String title = 'Story'}) => {
   'lastRead': '2025-11-13T10:20:33.315090Z',
 };
 
+// Reproduce the native plugin path that replaces a callback exception with a
+// generic platform failure. Domain refusals must survive that boundary.
+class CallbackWrappingFirestore extends FakeFirebaseFirestore {
+  @override
+  Future<T> runTransaction<T>(
+    TransactionHandler<T> transactionHandler, {
+    Duration timeout = const Duration(seconds: 30),
+    int maxAttempts = 5,
+  }) async {
+    try {
+      return await super.runTransaction(
+        transactionHandler,
+        timeout: timeout,
+        maxAttempts: maxAttempts,
+      );
+    } on Object {
+      throw FirebaseException(plugin: 'cloud_firestore', code: 'unknown');
+    }
+  }
+}
+
 void main() {
+  test(
+    'native callback wrapping retains conflict and deletion refusals',
+    () async {
+      final db = CallbackWrappingFirestore();
+      final cloud = FirestoreBookCloud(firestore: db);
+      await db.doc('books/one').set(book(chapter: 3));
+      await expectLater(
+        cloud.write(
+          'one',
+          book(chapter: 2),
+          changes: {'chapter': 2},
+          base: book(chapter: 1),
+        ),
+        throwsA(isA<BookConflictException>()),
+      );
+      expect((await db.doc('books/one').get()).data()!['chapter'], 3);
+      await db.doc('account_deletions/alice').set({'uid': 'alice'});
+      await expectLater(
+        cloud.delete('one', uid: 'alice'),
+        throwsA(isA<AccountDeletionPendingException>()),
+      );
+      expect((await db.doc('books/one').get()).exists, isTrue);
+    },
+  );
   late FakeFirebaseFirestore db;
   late FirestoreBookCloud cloud;
   setUp(() {

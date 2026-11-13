@@ -20,6 +20,8 @@ jobs:
         working-directory: tool/firestore
       - run: pnpm test
         working-directory: tool/firestore
+      - run: pnpm test:backup
+        working-directory: tool/firestore
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 30

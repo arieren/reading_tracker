@@ -55,3 +55,37 @@ The synthetic typed backup is retained outside Git under `Documents/ReadingTrack
 After the project owner confirmed the staging identity, its read-only preflight found two books, one deletion marker, and no destination conflicts. The migration-enabled staging APK was installed without clearing Hive, a typed backup was written/read-back verified outside Git, and the account was migrated through the actual CLI. Independent verification found state `ready`, two nested books, one nested marker and both original root book documents retained. Titles/chapters matched the source. The normal staging app was reopened with `USER_BOOK_STORAGE=true` and legacy date compatibility enabled. Production was not changed.
 
 Manual edit/offline/restart/reconnect/add/delete acceptance for this migrated account is pending. Keep migration-aware rules deployed and include `--dart-define=USER_BOOK_STORAGE=true` when rebuilding/running this staging account; older default builds cannot sync a migrated account.
+
+## Ownership compatibility bridge, 2026-11-12
+
+The project owner subsequently reported that the migrated staging account's acceptance checks passed. Staging now uses `firestore.ownership.rules` through the rules-only `firebase.ownership.json`; this supersedes the migration rules profile above while retaining copying/ready routing and deletion locks. Existing staging account records were not changed by the automated rehearsal.
+
+- 66 local rule/tool tests passed, including legacy full replacements, immutable ownership, cross-user denial, migration locks, and unchanged historical link-text preservation.
+- 18 backup/restore tests passed. A private verified production snapshot was replayed locally against the ownership profile; its report is retained beside the private backup, not in Git.
+- Ten live SDK checks and seven live administrative migration checks passed using disposable staging accounts, including verbatim saved-text migration and nested edits.
+- Both native Android checks passed: live staging storage, and migrated storage using local Firebase emulators. Offline recovery, conflict handling, deletion protection and resumed cleanup were exercised. An intermittent native transaction callback exception race found during rehearsal was fixed; a regression test verifies that domain conflict/deletion errors survive platform exception wrapping.
+- Flutter regression suite: 82 passed, one optional live catalog check skipped; analysis clean.
+
+Production rules and data remain unchanged. See [ownership rollout](ownership-rollout.md) for the separate production review/deployment step. This rehearsal does not replace published-old-APK/two-device/process-death acceptance.
+
+## Original 1.1.4 source rehearsal, 2026-11-12
+
+An isolated Android build used Git commit `c265bb0`, whose Android configuration labels it version 1.1.4/build 15. The original manual-add screen, library screen (including edit/delete), and sync service were verified byte-for-byte against their Git blobs. Only the isolated build/configuration/test harness was adapted: current Android build files, staging Firebase options, a separate `.legacyrehearsal` application ID, an integration-test dependency and SDK-required dependency resolution. The working app's implementation was not replaced.
+
+Against staging's deployed ownership rules, the original widgets successfully added a book with the historical manual-cover placeholder and ISO text date, edited its chapter, queued an offline edit, reconnected and confirmed the server value, reopened Hive, fetched through the original sync service, and deleted through the original library UI. The disposable staging Auth account and books were cleaned up. No existing user's account was used.
+
+The first rehearsal also exposed a pre-existing old-client lifecycle bug: disposing the library screen while an offline save is pending makes its completion callback access a disposed context. This was not a rules denial and the historical source was not patched. The passing rehearsal reconnects while the screen remains mounted, then reopens Hive. Actual process death while offline is not claimed tested by this sequence.
+
+This is a rebuilt source rehearsal, not the Play-signed APK. The phone's installed version is still unconfirmed; exact Play-artifact acceptance remains separate. Production rules/data remain unchanged.
+
+## Production ownership rules rollout, 2026-11-12
+
+The project owner subsequently confirmed Play version 1.1.4. The ownership rules-only rollout proceeded after a refreshed private backup restored successfully into a fresh local emulator and its content hash matched the snapshot used for candidate-rule replay. The original production records remain in their root layout. See [ownership rollout](ownership-rollout.md) for the deployed candidate and pending exact Play-app acceptance. Earlier statements that production rules were unchanged describe the state before this rollout.
+
+The project owner then reported successful exact Play-app acceptance, with an exception for cover images disappearing offline. The old app uses network-only image widgets; this does not indicate a Firestore rule failure. Production account migration remains pending the signed app rollout.
+
+## Persistent cover cache verification, 2026-11-12
+
+The updated app now stores native cover files in application-support storage and uses the shared cover widget for catalog previews. The disk-cache regression passed, including reopening metadata/files, an expired cover's failed offline refresh, unseen URLs, and explicit removal. Native Android verification passed: the cover widget downloaded an image from a local server, the server was stopped, the cache manager was closed/reopened, Flutter's memory image cache was cleared, and the widget rendered the cover again from disk. This verifies persistent local caching, not eager whole-library downloads or web offline support.
+
+Flutter regression suite: 83 passed, one optional live catalog check skipped; static analysis clean. The normal migration-enabled staging APK was rebuilt and installed after the integration harness. This cover update is not yet published on Google Play.

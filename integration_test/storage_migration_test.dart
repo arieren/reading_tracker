@@ -78,6 +78,8 @@ void main() {
               type: original.type,
               chapter: 7,
               lastRead: original.lastRead,
+              linkURL: original.linkURL,
+              imageUrl: original.imageUrl,
             ),
             original: original,
           );
@@ -97,6 +99,7 @@ void main() {
         final remote = (await ref.get(const GetOptions(source: Source.server)))
             .data()!;
         expect(remote['chapter'], 7);
+        expect(remote['linkURL'], '  number notes  ');
         expect(remote['revision'], 1);
         expect(remote['lastRead'], isA<String>());
         await repository.deleteBooks([repository.userBooks.single]);

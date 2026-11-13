@@ -54,3 +54,6 @@ android/app/.cxx/
 **/ui-debug.log
 **/rules-test-results.log
 **/migration-backups/
+**/backup-test-results.log
+**/ownership-test-results.log
+**/ownership-native-results.log
