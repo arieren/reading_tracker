@@ -2,6 +2,8 @@
 
 ## Status
 
+Migration preparation now adds a third rules profile to staging: `firebase.migration.json`. Existing unmigrated accounts retain compatibility behavior. See [user storage migration](user-storage-migration.md). **After any account is migrated, do not deploy the older strict/compatibility profiles to that database:** they do not enforce migration routing and could reopen stale root copies. The earlier compatibility rehearsal below describes its historical setup.
+
 The temporary rules (`firestore.compat.rules`) are now deployed to staging (`reading-tracker-test-a734e`) with the supplied indexes. Live SDK and native Android checks passed on 2026-11-12. Production retains its previously deployed rules and data. Full acceptance with the actual old/new APKs remains pending.
 
 | Build | Default client mode | Matching rules |

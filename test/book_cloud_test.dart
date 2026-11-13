@@ -21,6 +21,91 @@ void main() {
     db = FakeFirebaseFirestore();
     cloud = FirestoreBookCloud(firestore: db);
   });
+  test('migration feature is opt-in and absent metadata uses legacy', () async {
+    await db.collection('storage_migrations').doc('alice').set({
+      'state': 'ready',
+    });
+    await cloud.write('old', book());
+    expect((await db.collection('books').doc('old').get()).exists, isTrue);
+    await db.collection('storage_migrations').doc('alice').delete();
+    cloud = FirestoreBookCloud(firestore: db, userBookStorage: true);
+    expect((await cloud.fetch('alice')).keys, ['old']);
+  });
+  test(
+    'routing cutover invalidates the old full snapshot and cursors',
+    () async {
+      cloud = FirestoreBookCloud(firestore: db, userBookStorage: true);
+      await cloud.write('one', book());
+      await cloud.write('removed', book());
+      expect((await cloud.fetch('alice')).length, 2);
+      await db.doc('users/alice/books/one').set(book(chapter: 8));
+      await db.doc('storage_migrations/alice').set({'state': 'ready'});
+      final rows = await cloud.fetch('alice');
+      expect(rows.keys, ['one']);
+      expect(rows['one']!['chapter'], 8);
+    },
+  );
+  test('copying pauses all cloud operations without changing books', () async {
+    cloud = FirestoreBookCloud(firestore: db, userBookStorage: true);
+    await db.collection('books').doc('one').set(book());
+    await db.doc('storage_migrations/alice').set({'state': 'copying'});
+    await expectLater(
+      cloud.fetch('alice'),
+      throwsA(isA<StorageMigrationInProgress>()),
+    );
+    await expectLater(
+      cloud.write('one', book(chapter: 9)),
+      throwsA(isA<StorageMigrationInProgress>()),
+    );
+    await expectLater(
+      cloud.delete('one', uid: 'alice'),
+      throwsA(isA<StorageMigrationInProgress>()),
+    );
+    expect((await db.doc('books/one').get()).data()!['chapter'], 1);
+  });
+  test(
+    'nested upgrades and deletions leave frozen legacy copies untouched',
+    () async {
+      cloud = FirestoreBookCloud(
+        firestore: db,
+        userBookStorage: true,
+        legacyCompatibility: true,
+      );
+      await db.doc('storage_migrations/alice').set({'state': 'ready'});
+      await db.doc('books/one').set(book());
+      await db.doc('users/alice/books/one').set(book());
+      await cloud.write(
+        'one',
+        book(chapter: 6),
+        changes: {'uid': 'alice', 'chapter': 6},
+        operationId: 'edit',
+      );
+      final row = (await db.doc('users/alice/books/one').get()).data()!;
+      expect(row['chapter'], 6);
+      expect(row['revision'], 1);
+      expect(row['lastRead'], isA<String>());
+      expect((await db.doc('books/one').get()).data()!['chapter'], 1);
+      await cloud.delete('one', uid: 'alice');
+      expect((await db.doc('users/alice/books/one').get()).exists, isFalse);
+      expect(
+        (await db.doc('users/alice/book_deletions/one').get()).exists,
+        isTrue,
+      );
+      expect((await db.doc('books/one').get()).exists, isTrue);
+      await expectLater(
+        cloud.write('one', book()),
+        throwsA(isA<DeletedBookException>()),
+      );
+    },
+  );
+  test(
+    'unknown migration states fail closed instead of empty reconciliation',
+    () async {
+      cloud = FirestoreBookCloud(firestore: db, userBookStorage: true);
+      await db.doc('storage_migrations/alice').set({'state': 'unexpected'});
+      await expectLater(cloud.fetch('alice'), throwsStateError);
+    },
+  );
   test(
     'unfinished account deletion blocks fetches and all normal mutations',
     () async {

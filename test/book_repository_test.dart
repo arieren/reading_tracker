@@ -123,6 +123,45 @@ void main() {
       Book(title: title, chapter: chapter, type: 'Manga', uid: uid);
 
   test(
+    'pending Hive edits survive migration pause and upload to the new path',
+    () async {
+      final db = FakeFirebaseFirestore();
+      repository.dispose();
+      repository = BookRepository(
+        books: books,
+        outbox: outbox,
+        cloud: FirestoreBookCloud(
+          firestore: db,
+          userBookStorage: true,
+          legacyCompatibility: true,
+        ),
+        currentUid: () => uid,
+      );
+      final first = draft();
+      await repository.save(first);
+      expect(await repository.sync(force: true), isTrue);
+      final id = repository.userBooks.single.id!;
+      await repository.save(draft(chapter: 9)..id = id);
+      await db.doc('storage_migrations/alice').set({'state': 'copying'});
+      expect(await repository.sync(force: true), isFalse);
+      expect(repository.userBooks.single.chapter, 9);
+      expect(repository.pendingCount, 1);
+      expect(repository.lastError, contains('upgraded'));
+      await db
+          .doc('users/alice/books/$id')
+          .set((await db.doc('books/$id').get()).data()!);
+      await db.doc('storage_migrations/alice').set({'state': 'ready'});
+      expect(await repository.sync(force: true), isTrue);
+      expect(repository.pendingCount, 0);
+      expect(
+        (await db.doc('users/alice/books/$id').get()).data()!['chapter'],
+        9,
+      );
+      expect((await db.doc('books/$id').get()).data()!['chapter'], 1);
+    },
+  );
+
+  test(
     'a newer edit rebases after an older timed-out write eventually commits',
     () async {
       final remote = DelayedFirestoreCloud(firestore: FakeFirebaseFirestore());

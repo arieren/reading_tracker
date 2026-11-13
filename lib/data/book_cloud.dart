@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/book_codec.dart';
+import 'book_storage.dart';
+export 'book_storage.dart' show StorageMigrationInProgress;
 
 class DeletedBookException implements Exception {}
 
@@ -32,12 +34,16 @@ class FirestoreBookCloud implements BookCloud {
   FirestoreBookCloud({
     FirebaseFirestore? firestore,
     this.legacyCompatibility = false,
+    this.userBookStorage = const bool.fromEnvironment('USER_BOOK_STORAGE'),
   }) : _provided = firestore;
   final bool legacyCompatibility;
+  final bool userBookStorage;
   final FirebaseFirestore? _provided;
   FirebaseFirestore get _db => _provided ?? FirebaseFirestore.instance;
   CollectionReference<Map<String, dynamic>> get _books =>
       _db.collection('books');
+  BookStorage get _storage => BookStorage(_db, enabled: userBookStorage);
+  BookStorageLayout? _cachedLayout;
   String? _cachedUid;
   final _snapshot = <String, Map<String, dynamic>>{};
   Timestamp? _bookCursor, _deletionCursor;
@@ -54,20 +60,24 @@ class FirestoreBookCloud implements BookCloud {
         .doc(uid)
         .get(const GetOptions(source: Source.server));
     if (deletion.exists) throw AccountDeletionPendingException();
+    final layout = await _storage.read(uid);
     final requestedRevision = _cacheRevision;
     final full =
         legacyCompatibility ||
+        _cachedLayout != layout ||
         _cachedUid != uid ||
         _lastFullRead == null ||
         DateTime.now().difference(_lastFullRead!) > const Duration(minutes: 10);
-    if (_cachedUid != uid) {
+    if (_cachedUid != uid || _cachedLayout != layout) {
       _snapshot.clear();
       _bookCursor = null;
       _deletionCursor = null;
     }
-    Query<Map<String, dynamic>> books = _books.where('uid', isEqualTo: uid);
-    Query<Map<String, dynamic>> deletions = _db
-        .collection('book_deletions')
+    Query<Map<String, dynamic>> books = _storage
+        .collection(uid, 'books', layout)
+        .where('uid', isEqualTo: uid);
+    Query<Map<String, dynamic>> deletions = _storage
+        .collection(uid, 'book_deletions', layout)
         .where('uid', isEqualTo: uid);
     if (!full && _bookCursor != null) {
       books = books.where('updatedAt', isGreaterThanOrEqualTo: _bookCursor);
@@ -84,7 +94,8 @@ class FirestoreBookCloud implements BookCloud {
       books.get(const GetOptions(source: Source.server)),
       deletions.get(const GetOptions(source: Source.server)),
     ]);
-    if (requestedRevision != _cacheRevision) {
+    if (requestedRevision != _cacheRevision ||
+        layout != await _storage.read(uid)) {
       _lastFullRead = null;
       return fetch(uid);
     }
@@ -109,6 +120,7 @@ class FirestoreBookCloud implements BookCloud {
       ..clear()
       ..addAll(next);
     _cachedUid = uid;
+    _cachedLayout = layout;
     if (full) _lastFullRead = DateTime.now();
     return {for (final e in next.entries) e.key: Map.of(e.value)};
   }
@@ -130,9 +142,11 @@ class FirestoreBookCloud implements BookCloud {
         _db.collection('account_deletions').doc(data['uid'] as String),
       );
       if (accountDeletion.exists) throw AccountDeletionPendingException();
-      final ref = _books.doc(id);
+      final uid = data['uid'] as String;
+      final layout = await _storage.readInTransaction(transaction, uid);
+      final ref = _storage.collection(uid, 'books', layout).doc(id);
       final deleted = await transaction.get(
-        _db.collection('book_deletions').doc(id),
+        _storage.collection(uid, 'book_deletions', layout).doc(id),
       );
       final snapshot = await transaction.get(ref);
       if (deleted.exists || (!snapshot.exists && !allowCreate)) {
@@ -189,8 +203,9 @@ class FirestoreBookCloud implements BookCloud {
         _db.collection('account_deletions').doc(uid),
       );
       if (accountDeletion.exists) throw AccountDeletionPendingException();
-      final ref = _books.doc(id);
-      final marker = _db.collection('book_deletions').doc(id);
+      final layout = await _storage.readInTransaction(transaction, uid);
+      final ref = _storage.collection(uid, 'books', layout).doc(id);
+      final marker = _storage.collection(uid, 'book_deletions', layout).doc(id);
       final existing = await transaction.get(ref);
       final deleted = await transaction.get(marker);
       if (deleted.exists) {

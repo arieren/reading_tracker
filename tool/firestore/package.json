@@ -2,11 +2,14 @@
   "name": "reading-tracker-rules",
   "private": true,
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --project demo-reading-tracker --config ../../firebase.test.json \"node --test --test-concurrency=1 rules.test.mjs compatibility.test.mjs\""
+    "test": "firebase emulators:exec --only firestore --project demo-reading-tracker --config ../../firebase.test.json \"node --test --test-concurrency=1 rules.test.mjs compatibility.test.mjs migration.test.mjs migration-cli.test.mjs\"",
+    "migration:dry-run": "node migrate-user.mjs",
+    "test:migration:android": "firebase emulators:exec --only auth,firestore --project demo-reading-tracker --config ../../firebase.migration-test.json \"node run-native-migration.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",
     "firebase": "^13.2.0",
+    "firebase-admin": "^14.5.0",
     "firebase-tools": "^15.35.0"
   }
 }

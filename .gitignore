@@ -53,3 +53,4 @@ android/app/.cxx/
 **/firestore-debug.log
 **/ui-debug.log
 **/rules-test-results.log
+**/migration-backups/

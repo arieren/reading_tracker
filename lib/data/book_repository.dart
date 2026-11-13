@@ -329,6 +329,9 @@ class BookRepository extends ChangeNotifier {
       _lastSync = DateTime.now();
       lastError = conflicts.isEmpty ? null : 'Some books changed on another device. Review conflicts to finish syncing.';
       return true;
+    } on StorageMigrationInProgress {
+      lastError = 'Cloud storage is being upgraded. Changes are saved on this device and will sync when it finishes.';
+      return false;
     } on AccountDeletionPendingException {
       await _rememberDeletion(uid);
       lastError = 'Account deletion is paused. Reconnect and resume deletion.';

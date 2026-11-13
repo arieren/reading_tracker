@@ -29,3 +29,29 @@ The project owner subsequently confirmed Google sign-in, chapter edits, and edit
 - Normal staging compatibility APK rebuilt, installed and launched after the integration harness. Normal regression suite: 67 passed, one optional live catalog test skipped; analysis clean. Emulator stopped after verification to release host resources.
 
 Use `--dart-define=LEGACY_DATABASE_COMPATIBILITY=true` with staging for the next compatibility rehearsal. Plain staging still defaults to strict client mode; do not mix its native-date records with tests that expect the original app's text-only readers. See `compatibility-rollout.md` for restoring the strict staging rules afterward.
+
+## User storage migration preparation, 2026-11-12
+
+This section supersedes the earlier staging rules profile: staging now has `firestore.migration.rules` deployed through `firebase.migration.json`. Existing live accounts remain on root collections because no live routing checkpoints were created. Production is unchanged.
+
+- 58 local rule/tool/CLI tests passed, including interruption/resume, cancelled-copy cleanup, owner isolation, paged copying beyond 200 books, complete content comparison, typed backup restoration into an isolated emulator namespace, rejection of unsafe numeric revisions, and refusal of production mutations.
+- 77 Flutter tests passed; one optional live catalog check skipped. Static analysis clean.
+- Native Android 16 migration rehearsal passed using local Auth/Firestore emulators and a fictional demo account. The real Admin migration created the nested layout; the actual app repository recovered an offline Hive edit and uploaded it there. Cleanup resumed after an injected failure, and the host Admin SDK independently confirmed both layouts, routing metadata, user container, and Auth identity were removed. The minimal account-deletion lock remained.
+- Native live staging storage test also passed with `USER_BOOK_STORAGE=true` and legacy date compatibility enabled. This verifies absent-metadata legacy routing and both-layout cleanup against deployed rules. The disposable identity/data were removed.
+- A real staging user's administrative copy/cutover has not run: local ADC administrator credentials still need setup. Firebase CLI deployment login is separate. Old/new APK acceptance, real process-death checks and a reviewed production backup/restore remain gates.
+
+See [user storage migration](user-storage-migration.md). After any UID reaches `ready`, do not replace migration rules with the older strict/compatibility profiles; those profiles do not enforce routing freezes.
+
+## Live administrative migration rehearsal, 2026-11-12
+
+ADC login completed and its quota project was set explicitly to `reading-tracker-test-a734e`. Administrator Firestore access was verified. The earlier ADC/setup gate above is now resolved.
+
+Seven live checks passed using one newly created disposable staging account: CLI dry-run without mutations, deployed write-freeze enforcement, checkpoint resume and typed-backup read-back verification, content-preserving cutover, successful nested edits plus rejection of a returning old offline write, permanent deletion/repeated-migration protection, and both-layout cleanup. The original root documents remained unchanged until explicit test-account cleanup. The disposable Auth identity, root/nested books, routing metadata and user container were removed; a minimal permanent account-deletion lock remains.
+
+The synthetic typed backup is retained outside Git under `Documents/ReadingTrackerBackups`. No existing staging account or production data was migrated. Attended staging app acceptance and production backup/restore review remain pending.
+
+## Confirmed staging account cutover, 2026-11-12
+
+After the project owner confirmed the staging identity, its read-only preflight found two books, one deletion marker, and no destination conflicts. The migration-enabled staging APK was installed without clearing Hive, a typed backup was written/read-back verified outside Git, and the account was migrated through the actual CLI. Independent verification found state `ready`, two nested books, one nested marker and both original root book documents retained. Titles/chapters matched the source. The normal staging app was reopened with `USER_BOOK_STORAGE=true` and legacy date compatibility enabled. Production was not changed.
+
+Manual edit/offline/restart/reconnect/add/delete acceptance for this migrated account is pending. Keep migration-aware rules deployed and include `--dart-define=USER_BOOK_STORAGE=true` when rebuilding/running this staging account; older default builds cannot sync a migrated account.

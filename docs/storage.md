@@ -4,6 +4,10 @@
 
 The library stays at `books/{bookId}`. No documents are moved into user subcollections. Hive adapter type 0, fields 0–7, the `books` box and numeric local keys stay unchanged. `book_outbox_v1` stores durable operations and conflict snapshots. `account_deletion_v1` stores account-deletion intent separately from book operations.
 
+An opt-in migration implementation now supports `users/{uid}/books/{bookId}`. Default builds still use the layout above. See [user storage migration](user-storage-migration.md) for routing, staging tooling, backups and cutover gates; production has not migrated.
+
+After any account migrates, retain the migration-aware rules profile (`firebase.migration.json`). Older rule profiles do not enforce routing locks and must not be used as an automatic rollback.
+
 Firestore book fields remain `uid`, `title`, `type`, `chapter`, `imageUrl`, `linkURL`, `lastRead`, with new `revision` (integer), `lastOperationId` (idempotency token) and `updatedAt` (server timestamp). Strict writes use a native timestamp or null for `lastRead`; production compatibility builds temporarily retain ISO strings for old readers. All new readers accept both formats. Strings without an offset cannot recover an unknown historical timezone; they retain the existing app's local-time interpretation. There is no bulk rewrite of historical dates.
 
 `book_deletions/{bookId}` contains only `uid` and a server `deletedAt`. Normal deletion atomically creates this marker and deletes the book. Markers must not expire while arbitrarily old offline devices can return. The rules deny recreating a marked ID. An explicit future restore feature must allocate a new book ID.

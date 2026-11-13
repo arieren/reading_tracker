@@ -40,6 +40,8 @@ Account deletion stays compatible with Spark. A durable local intent and server 
 
 ## Verification and releases
 
+The opt-in [user storage migration](docs/user-storage-migration.md) preserves Hive and adds administrator-controlled routing to user subcollections. It remains disabled by default; production migration writes are blocked in the tooling pending staging acceptance and backup review.
+
 ```sh
 dart format --output=none --set-exit-if-changed lib test integration_test
 flutter analyze
