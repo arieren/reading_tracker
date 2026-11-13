@@ -11,9 +11,11 @@ import 'screens/main_screen.dart';
 import 'screens/login_page.dart';
 import 'services/theme_provider.dart';
 import 'services/app_update_service.dart';
+import 'services/cover_cache.dart';
 
 Future<void> initializeApplication() async {
   await initializeFirebaseEnvironment();
+  await initializeCoverCache();
   await Hive.initFlutter();
   if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(BookAdapter());
   await Hive.openBox<Book>('books');

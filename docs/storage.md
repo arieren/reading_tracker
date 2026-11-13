@@ -30,6 +30,14 @@ No Cloud Functions, scheduler, billing upgrade or automatic server worker is req
 
 Failures do not restore deleted cloud books. Reopening the app presents **Resume account deletion** for local intent; a server deletion marker is also detected during sync on another device. Reauthenticate and keep the app open/online to continue. Closing the app pauses work. Spark cannot guarantee cleanup when the app is never reopened or when an external client deletes Auth directly. A minimal permanent job marker (UID/status/timestamps, no library/email/profile) remains to reject stale tokens. Once deletion starts, normal writes are locked; signing out is available, cancellation is not.
 
+## Offline cover images
+
+Native app startup configures a shared cover cache under application-support storage rather than the operating system's temporary directory. Home, library, catalog results and add previews all use `BookCover`/`CachedNetworkImage`. A cover downloads when first displayed successfully; this does not eagerly download an entire library. Metadata and image files survive normal app restarts, and a failed offline refresh retains an existing cached cover even when its HTTP freshness has expired.
+
+The cache is bounded to 2,000 covers and removes covers unused for a year; least-recently-used entries may be removed when capacity is exceeded. It is not a permanent image backup. Unseen covers, changed URLs that have not loaded yet, cleared app storage and reinstallation still require internet. Each device downloads its own covers. Web continues to use browser-managed caching. Cover files are local only; Hive fields, Firestore records and remote image URLs are unchanged.
+
+`test/cover_cache_test.dart` verifies disk persistence after cache-manager replacement, expired offline fallback, unseen-image failure and explicit removal. `integration_test/cover_cache_test.dart` exercises the real Android storage provider and cover widget with the local image server stopped and Flutter's memory image cache cleared.
+
 ## Deployment and compatibility
 
 This protocol needs the supplied rules and indexes. Local files and emulator tests do not verify or change deployed production rules. The old published app can read its existing books with these rules but cannot perform its unversioned writes or unmarked deletes after the strict rules are deployed. Never deploy the strict rules casually to the live project before coordinating the app release.

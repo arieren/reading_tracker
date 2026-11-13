@@ -228,19 +228,11 @@ class _AddBookScreenState extends State<AddBookScreen> {
           return ListTile(
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                manga['images']['jpg']['image_url'] ?? '',
+              child: BookCover(
+                imageUrl: manga['images']['jpg']['image_url'],
+                type: manga['type'] ?? selectedType,
                 width: 50,
                 height: 70,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: 50,
-                    height: 70,
-                    color: Colors.grey.shade300,
-                    child: Icon(Icons.broken_image),
-                  );
-                },
               ),
             ),
             title: Text(
