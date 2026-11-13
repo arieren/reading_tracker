@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "311448340138",
+    "project_id": "reading-tracker-test-a734e",
+    "storage_bucket": "reading-tracker-test-a734e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:311448340138:android:aa436259f79fe533ce72d3",
+        "android_client_info": {
+          "package_name": "edu.cpp.reading_tracker.staging"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "311448340138-ridk1dvptaa33biqson9fg67997s58pr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "edu.cpp.reading_tracker.staging",
+            "certificate_hash": "3a32d3ba0685bd5e7780d22205f14908d80a2723"
+          }
+        },
+        {
+          "client_id": "311448340138-k576vjf68kmdtgvf2t21eo06m11q4g7r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqH8Z7nli6gBA0U6th3i1Q-YHBCQ40vOg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "311448340138-k576vjf68kmdtgvf2t21eo06m11q4g7r.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

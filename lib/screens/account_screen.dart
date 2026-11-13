@@ -80,13 +80,13 @@ class _AccountScreenState extends State<AccountScreen> {
     try {
       await BookRepository.instance.deleteAccount(
         reauthenticate: () => _auth.reauthenticate(password: password),
-        deleteIdentity: user.delete,
+        requestDeletion: _auth.requestAccountDeletion,
       );
       await _auth.signOut();
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } on Object catch (error) {
       _message(
-        '${authenticationError(error)} Your local library is retained if deletion did not complete.',
+        '${authenticationError(error)} Deletion is paused. Reconnect and resume it from Account Settings.',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -125,6 +125,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
+    final deletionPending = BookRepository.instance.deletionPending;
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
@@ -139,39 +140,52 @@ class _AccountScreenState extends State<AccountScreen> {
                 FirebaseAuth.instance.currentUser?.email ?? 'Signed out',
               ),
             ),
-            SwitchListTile(
-              title: const Text('Dark Mode'),
-              value: theme.themeMode == ThemeMode.dark,
-              onChanged: _busy ? null : (_) => theme.toggleTheme(),
-            ),
-            ListTile(
-              leading: const Icon(Icons.library_books),
-              title: const Text('List My Books'),
-              enabled: !_busy,
-              onTap: _listBooks,
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file),
-              title: const Text('Import Books'),
-              enabled: !_busy,
-              onTap: _import,
-            ),
+            if (deletionPending) ...[
+              const Text(
+                'Account deletion is unfinished. Keep the app open and online while resuming. Your library stays on this device until deletion finishes.',
+              ),
+              ElevatedButton(
+                onPressed: _busy ? null : _deleteAccount,
+                child: const Text('Resume account deletion'),
+              ),
+            ],
+            if (!deletionPending) ...[
+              SwitchListTile(
+                title: const Text('Dark Mode'),
+                value: theme.themeMode == ThemeMode.dark,
+                onChanged: _busy ? null : (_) => theme.toggleTheme(),
+              ),
+              ListTile(
+                leading: const Icon(Icons.library_books),
+                title: const Text('List My Books'),
+                enabled: !_busy,
+                onTap: _listBooks,
+              ),
+              ListTile(
+                leading: const Icon(Icons.upload_file),
+                title: const Text('Import Books'),
+                enabled: !_busy,
+                onTap: _import,
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Sign Out'),
               enabled: !_busy,
               onTap: _signOut,
             ),
-            const Divider(),
-            ListTile(
-              leading: Icon(
-                Icons.delete_forever,
-                color: Theme.of(context).colorScheme.error,
+            if (!deletionPending) ...[
+              const Divider(),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_forever,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('Delete Account'),
+                enabled: !_busy,
+                onTap: _deleteAccount,
               ),
-              title: const Text('Delete Account'),
-              enabled: !_busy,
-              onTap: _deleteAccount,
-            ),
+            ],
           ],
         ),
       ),

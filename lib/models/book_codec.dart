@@ -20,9 +20,31 @@ Map<String, dynamic> encodeBook(Book b) => {
   'chapter': b.chapter,
   'imageUrl': b.imageUrl ?? '',
   'linkURL': b.linkURL ?? '',
-  'lastRead': b.lastRead?.toIso8601String(),
+  'lastRead': b.lastRead?.toUtc().toIso8601String(),
 };
 
+// Hive journals retain primitives; only the Firestore boundary uses Timestamp.
+Map<String, dynamic> normalizeCloudBook(Map<String, dynamic> data) => {
+  ...data,
+  'lastRead': switch (data['lastRead']) {
+    final Timestamp value => value.toDate().toUtc().toIso8601String(),
+    final String value => DateTime.tryParse(value)?.toUtc().toIso8601String(),
+    _ => null,
+  },
+}..remove('updatedAt');
+
+Map<String, dynamic> cloudBookFields(
+  Map<String, dynamic> data, {
+  bool legacyLastRead = false,
+}) => {
+  for (final key in ['uid', 'title', 'type', 'chapter', 'imageUrl', 'linkURL'])
+    key: data[key],
+  'lastRead': legacyLastRead
+      ? data['lastRead']
+      : data['lastRead'] is String
+      ? Timestamp.fromDate(DateTime.parse(data['lastRead'] as String).toUtc())
+      : data['lastRead'],
+};
 Book decodeBook(String id, Map<String, dynamic> data) {
   final title = data['title'];
   final chapter = data['chapter'];
@@ -53,10 +75,16 @@ Book decodeBook(String id, Map<String, dynamic> data) {
 
 void validateBook(Book b) {
   if (b.title.trim().isEmpty) throw const FormatException('Enter a title.');
-  if (b.chapter < 0) {
+  if (b.title.trim().length > 500) {
+    throw const FormatException('Titles must be 500 characters or fewer.');
+  }
+  if (b.chapter < 0 || b.chapter > 2147483647) {
     throw const FormatException('Chapter must be zero or greater.');
   }
   if (!validWebUrl(b.linkURL) || !validWebUrl(b.imageUrl)) {
     throw const FormatException('Links must be valid http or https URLs.');
+  }
+  if ((b.linkURL?.length ?? 0) > 4096 || (b.imageUrl?.length ?? 0) > 4096) {
+    throw const FormatException('Links must be 4096 characters or fewer.');
   }
 }

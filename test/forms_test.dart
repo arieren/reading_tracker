@@ -123,6 +123,64 @@ void main() {
     },
   );
 
+  testWidgets('leaving Add resets manual entry to a clean search form', (
+    tester,
+  ) async {
+    var active = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: IndexedStack(
+                    index: active ? 0 : 1,
+                    children: [
+                      AddBookScreen(
+                        repository: repository,
+                        currentUid: () => 'alice',
+                        onBookAdded: () {},
+                        isActive: active,
+                      ),
+                      const Center(child: Text('Other page')),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => active = !active),
+                  child: const Text('Switch tab'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Manual Entry'));
+    await tester.pump();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Title'),
+      'Manual draft',
+    );
+    await tester.tap(find.text('Switch tab'));
+    await tester.pump();
+    await tester.tap(find.text('Switch tab'));
+    await tester.pump();
+    expect(find.text('Search & Add'), findsOneWidget);
+    expect(find.text('Manual Entry'), findsOneWidget);
+    expect(find.text('Use Search'), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Title'))
+          .controller!
+          .text,
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('manual cover entered in the form reaches the saved book', (
     tester,
   ) async {

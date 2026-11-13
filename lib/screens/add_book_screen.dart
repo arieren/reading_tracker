@@ -1,4 +1,3 @@
-import '../widgets/account_button.dart';
 import '../widgets/book_cover.dart';
 
 import 'dart:async';
@@ -21,10 +20,12 @@ class AddBookScreen extends StatefulWidget {
     this.repository,
     this.currentUid,
     this.catalog,
+    this.isActive = true,
   });
   final BookRepository? repository;
   final String? Function()? currentUid;
   final CatalogService? catalog;
+  final bool isActive;
 
   @override
   State<AddBookScreen> createState() => _AddBookScreenState();
@@ -61,6 +62,20 @@ class _AddBookScreenState extends State<AddBookScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant AddBookScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _searchTimer?.cancel();
+      _searchRevision++;
+      if (_isManualEntry) {
+        _isManualEntry = false;
+        _resetForm();
+      }
+      _isSearching = false;
+    }
+  }
+
+  @override
   void dispose() {
     _searchTimer?.cancel();
     _searchRevision++;
@@ -77,7 +92,6 @@ class _AddBookScreenState extends State<AddBookScreen> {
       appBar: AppBar(
         title: Text(_isManualEntry ? 'Manual Entry' : 'Search & Add'),
         actions: [
-          const AccountButton(),
           TextButton.icon(
             onPressed: () {
               setState(() {

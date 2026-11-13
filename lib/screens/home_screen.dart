@@ -1,7 +1,6 @@
 import '../widgets/book_metadata.dart';
 import '../widgets/library_empty_state.dart';
 import '../widgets/book_cover.dart';
-import '../widgets/account_button.dart';
 
 import 'dart:async';
 
@@ -62,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        actions: const [ReaderHelpButton(), AccountButton()],
+        automaticallyImplyLeading: false,
         title: Text(
           'Recently Read',
           style: TextStyle(
@@ -70,9 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         centerTitle: true,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
-        ),
       ),
       body: ValueListenableBuilder<Box<Book>>(
         valueListenable: bookBox.listenable(),

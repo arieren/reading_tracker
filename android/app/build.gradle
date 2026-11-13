@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import groovy.json.JsonSlurper
 
 plugins {
     id "com.android.application"
@@ -32,6 +33,23 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "environment"
+    productFlavors {
+        production {
+            dimension = "environment"
+            resValue "string", "app_name", "Reading Tracker"
+        }
+        staging {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            resValue "string", "app_name", "Reading Tracker Test"
+        }
+    }
+
+    buildFeatures {
+        resValues = true
+    }
+
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String
@@ -48,6 +66,20 @@ android {
     }
 }
 
+tasks.configureEach { task ->
+    if (task.name.startsWith("processStaging") && task.name.endsWith("GoogleServices")) {
+        task.doFirst {
+            def configFile = file("src/staging/google-services.json")
+            if (!configFile.exists()) {
+                throw new GradleException("Register edu.cpp.reading_tracker.staging in reading-tracker-test-a734e and place its google-services.json in android/app/src/staging/.")
+            }
+            def config = new JsonSlurper().parse(configFile)
+            if (config.project_info.project_id != "reading-tracker-test-a734e") {
+                throw new GradleException("Staging must use Firebase project reading-tracker-test-a734e.")
+            }
+        }
+    }
+}
 
 kotlin {
     compilerOptions {

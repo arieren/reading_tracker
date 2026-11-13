@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'account_deletion_service.dart';
+
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
@@ -74,6 +76,22 @@ class AuthService {
         await GoogleSignIn.instance.signOut();
       } on Object catch (_) {}
     }
+  }
+
+  Future<void> requestAccountDeletion() async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Please sign in again.');
+    await user.getIdToken(true);
+    await AccountDeletionService().delete(
+      user.uid,
+      deleteIdentity: () async {
+        try {
+          await user.delete();
+        } on FirebaseAuthException catch (error) {
+          if (error.code != 'user-not-found') rethrow;
+        }
+      },
+    );
   }
 
   Future<void> reauthenticate({String? password}) async {

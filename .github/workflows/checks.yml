@@ -3,6 +3,23 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  firestore-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: npm install --global pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: tool/firestore
+      - run: pnpm test
+        working-directory: tool/firestore
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -14,7 +31,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: dart format --output=none --set-exit-if-changed lib test integration_test
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug

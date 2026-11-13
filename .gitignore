@@ -52,3 +52,4 @@ android/app/.cxx/
 **/firebase-debug.log
 **/firestore-debug.log
 **/ui-debug.log
+**/rules-test-results.log

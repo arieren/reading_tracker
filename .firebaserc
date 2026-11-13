@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "staging": "reading-tracker-test-a734e",
+    "production": "reading-tracker-67f66"
+  }
+}

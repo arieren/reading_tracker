@@ -1,12 +1,11 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'data/book_repository.dart';
-import 'firebase_options.dart';
+import 'services/firebase_environment.dart';
 import 'models/book.dart';
 import 'screens/main_screen.dart';
 import 'screens/login_page.dart';
@@ -14,11 +13,7 @@ import 'services/theme_provider.dart';
 import 'services/app_update_service.dart';
 
 Future<void> initializeApplication() async {
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
+  await initializeFirebaseEnvironment();
   await Hive.initFlutter();
   if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(BookAdapter());
   await Hive.openBox<Book>('books');

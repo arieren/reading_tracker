@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:reading_tracker/data/book_repository.dart';
 import 'package:reading_tracker/models/book.dart';
 import 'package:reading_tracker/models/book_codec.dart';
@@ -12,6 +13,7 @@ class MemoryCloud implements BookCloud {
   final records = <String, Map<String, dynamic>>{};
   bool offline = false;
   int sequence = 0;
+  int writeCalls = 0;
   Completer<void>? writing;
   Completer<void>? writeStarted;
   Completer<void>? fetching;
@@ -22,12 +24,16 @@ class MemoryCloud implements BookCloud {
   }
 
   @override
-  Future<void> write(
+  Future<Map<String, dynamic>> write(
     String id,
     Map<String, dynamic> data, {
     Map<String, dynamic>? changes,
+    Map<String, dynamic>? base,
+    String? operationId,
+    bool allowCreate = true,
   }) async {
     check();
+    writeCalls++;
     final copy = Map<String, dynamic>.from(
       records.containsKey(id) ? (changes ?? data) : data,
     );
@@ -36,10 +42,11 @@ class MemoryCloud implements BookCloud {
     }
     if (writing != null) await writing!.future;
     records[id] = {...?records[id], ...copy};
+    return Map.of(records[id]!);
   }
 
   @override
-  Future<void> delete(String id) async {
+  Future<void> delete(String id, {required String uid}) async {
     check();
     records.remove(id);
   }
@@ -52,6 +59,36 @@ class MemoryCloud implements BookCloud {
       for (final e in records.entries)
         if (e.value['uid'] == uid) e.key: Map.of(e.value),
     };
+  }
+}
+
+class DelayedFirestoreCloud extends FirestoreBookCloud {
+  DelayedFirestoreCloud({required super.firestore});
+  bool delayNext = false;
+  final gate = Completer<void>();
+  final started = Completer<void>();
+  @override
+  Future<Map<String, dynamic>> write(
+    String id,
+    Map<String, dynamic> data, {
+    Map<String, dynamic>? changes,
+    Map<String, dynamic>? base,
+    String? operationId,
+    bool allowCreate = true,
+  }) async {
+    if (delayNext) {
+      delayNext = false;
+      started.complete();
+      await gate.future;
+    }
+    return super.write(
+      id,
+      data,
+      changes: changes,
+      base: base,
+      operationId: operationId,
+      allowCreate: allowCreate,
+    );
   }
 }
 
@@ -85,6 +122,169 @@ void main() {
   Book draft({String title = 'Story', int chapter = 1}) =>
       Book(title: title, chapter: chapter, type: 'Manga', uid: uid);
 
+  test(
+    'a newer edit rebases after an older timed-out write eventually commits',
+    () async {
+      final remote = DelayedFirestoreCloud(firestore: FakeFirebaseFirestore());
+      repository.dispose();
+      repository = BookRepository(
+        books: books,
+        outbox: outbox,
+        cloud: remote,
+        currentUid: () => uid,
+        uploadTimeout: const Duration(milliseconds: 50),
+      );
+      final first = draft();
+      await repository.save(first);
+      await repository.sync(force: true);
+      remote.delayNext = true;
+      await repository.save(draft(chapter: 2)..id = first.id);
+      final old = repository.sync(force: true);
+      await remote.started.future;
+      expect(await old, isFalse);
+      await repository.save(draft(chapter: 3)..id = first.id);
+      final current = repository.sync(force: true);
+      remote.gate.complete();
+      await current;
+      expect(repository.conflicts, isEmpty);
+      expect(repository.pendingCount, 0);
+      expect((await remote.fetch('alice'))[first.id]!['chapter'], 3);
+      expect(books.values.single.chapter, 3);
+    },
+  );
+
+  test('conflicts retain local edits until explicitly resolved', () async {
+    final db = FakeFirebaseFirestore();
+    final remote = FirestoreBookCloud(firestore: db);
+    repository.dispose();
+    repository = BookRepository(
+      books: books,
+      outbox: outbox,
+      cloud: remote,
+      currentUid: () => uid,
+    );
+    final first = draft();
+    await repository.save(first);
+    await repository.sync(force: true);
+    await remote.write(
+      first.id!,
+      encodeBook(draft(chapter: 9)),
+      changes: {'uid': uid, 'chapter': 9},
+      operationId: 'other-device',
+    );
+    await repository.save(draft(chapter: 3)..id = first.id);
+    await repository.sync(force: true);
+    expect(repository.conflicts.length, 1);
+    expect(books.values.single.chapter, 3);
+    expect(repository.lastError, contains('Review conflicts'));
+    await repository.resolveConflict(first.id!, keepLocal: true);
+    await repository.sync(force: true);
+    expect(repository.conflicts, isEmpty);
+    expect((await remote.fetch('alice'))[first.id]!['chapter'], 3);
+    await remote.write(
+      first.id!,
+      encodeBook(draft(chapter: 12)),
+      changes: {'uid': uid, 'chapter': 12},
+      operationId: 'other-again',
+    );
+    await repository.save(
+      draft(title: 'Locally renamed', chapter: 4)..id = first.id,
+    );
+    await repository.sync(force: true);
+    await repository.resolveConflict(first.id!, keepLocal: false);
+    await repository.sync(force: true);
+    expect(books.values.single.chapter, 12);
+    expect(books.values.single.title, 'Locally renamed');
+    expect(repository.pendingCount, 0);
+  });
+
+  test('remote deletion wins over a pending offline edit', () async {
+    final remote = FirestoreBookCloud(firestore: FakeFirebaseFirestore());
+    repository.dispose();
+    repository = BookRepository(
+      books: books,
+      outbox: outbox,
+      cloud: remote,
+      currentUid: () => uid,
+    );
+    final first = draft();
+    await repository.save(first);
+    await repository.sync(force: true);
+    await repository.save(draft(chapter: 7)..id = first.id);
+    await remote.delete(first.id!, uid: 'alice');
+    await repository.sync(force: true);
+    expect(books.isEmpty, isTrue);
+    expect(outbox.isEmpty, isTrue);
+  });
+
+  test(
+    'timed-out upload is reused and its late acknowledgment clears the journal',
+    () async {
+      repository.dispose();
+      repository = BookRepository(
+        books: books,
+        outbox: outbox,
+        cloud: cloud,
+        currentUid: () => uid,
+        uploadTimeout: const Duration(milliseconds: 20),
+      );
+      cloud.writing = Completer<void>();
+      await repository.save(draft());
+      expect(await repository.sync(force: true), isFalse);
+      expect(await repository.sync(force: true), isFalse);
+      expect(cloud.writeCalls, 1);
+      expect(repository.pendingCount, 1);
+      cloud.writing!.complete();
+      for (var i = 0; i < 50 && repository.pendingCount > 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(repository.pendingCount, 0);
+      expect(cloud.records.length, 1);
+    },
+  );
+
+  test(
+    'unfinished account deletion survives restart and blocks local edits',
+    () async {
+      final state = await Hive.openBox<dynamic>('deletion_state');
+      repository.dispose();
+      repository = BookRepository(
+        books: books,
+        outbox: outbox,
+        cloud: cloud,
+        currentUid: () => uid,
+        deletionState: state,
+      );
+      await repository.save(draft());
+      await expectLater(
+        repository.deleteAccount(
+          reauthenticate: () async {},
+          requestDeletion: () async => throw StateError('offline'),
+        ),
+        throwsStateError,
+      );
+      expect(repository.deletionPending, isTrue);
+      repository.dispose();
+      repository = BookRepository(
+        books: books,
+        outbox: outbox,
+        cloud: cloud,
+        currentUid: () => uid,
+        deletionState: state,
+      );
+      expect(repository.deletionPending, isTrue);
+      await expectLater(repository.save(draft()), throwsStateError);
+      await repository.deleteAccount(
+        reauthenticate: () async {},
+        requestDeletion: () async {
+          cloud.records.clear();
+        },
+      );
+      expect(repository.deletionPending, isFalse);
+      expect(books.isEmpty, isTrue);
+      expect(outbox.isEmpty, isTrue);
+    },
+  );
   test('offline save survives restart and retries with the same ID', () async {
     cloud.offline = true;
     final book = draft();
@@ -197,7 +397,7 @@ void main() {
     await expectLater(
       repository.deleteAccount(
         reauthenticate: () async => throw StateError('bad password'),
-        deleteIdentity: () async {},
+        requestDeletion: () async {},
       ),
       throwsStateError,
     );
@@ -210,7 +410,7 @@ void main() {
     await expectLater(
       repository.deleteAccount(
         reauthenticate: () async {},
-        deleteIdentity: () async => throw StateError('recent login needed'),
+        requestDeletion: () async => throw StateError('recent login needed'),
       ),
       throwsStateError,
     );
@@ -226,7 +426,8 @@ void main() {
     );
     await repository.deleteAccount(
       reauthenticate: () async {},
-      deleteIdentity: () async {
+      requestDeletion: () async {
+        cloud.records.clear();
         uid = null;
       },
     );

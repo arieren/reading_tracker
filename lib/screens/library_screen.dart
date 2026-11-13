@@ -1,7 +1,6 @@
 import '../widgets/book_metadata.dart';
 import '../widgets/library_empty_state.dart';
 import '../widgets/book_cover.dart';
-import '../widgets/account_button.dart';
 
 import 'dart:async';
 
@@ -104,10 +103,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return AppBar(
         title: Text('Library'),
         actions: [
-          const AccountButton(),
           _buildViewToggle(),
           _buildSortDropdown(),
           IconButton(
+            tooltip: 'Select books',
             icon: Icon(Icons.edit),
             onPressed: () {
               setState(() {

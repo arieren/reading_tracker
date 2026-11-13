@@ -18,6 +18,7 @@ Firebase configuration is in `lib/firebase_options.dart` and `android/app/google
 ## Organization
 
 - `data/book_repository.dart`: local changes, pending operations, reconciliation and account data cleanup.
+- `data/book_cloud.dart`: Firestore transactions, incremental reads, revisions and deletion markers.
 - `models/book.dart` and `book_codec.dart`: existing Hive schema, cloud serialization and validation.
 - `services/`: authentication, catalog requests, import parsing, update checks and preferences.
 - `widgets/`: shared auth form, book editor and navigation actions.
@@ -31,14 +32,16 @@ Hive's existing `books` box remains the local library. Adapter type ID 0, fields
 
 The separate `book_outbox_v1` box journals upserts/deletions before local changes. Books receive stable Firestore IDs before being queued. Local saves work without Firestore; the queue survives restart. It retries on manual refresh, resume and every 30 seconds while the main screen is active. Cloud timeouts never clear the queue. Only successful server queries establish remote deletion; failed/cached queries cannot erase local books.
 
-Edits upload changed fields plus ownership, preserving unrelated edits from another device. Pending local changes win until acknowledged; concurrent changes to the same field use last cloud-write wins. Account switches preserve separate queues. ID-less legacy books belonging to the signed-in user receive IDs and are queued. Records with no owner are retained without assigning them to an account automatically.
+Edits upload changed fields and merge unrelated cloud edits in transactions. Same-field conflicts retain local changes until the user chooses a version. Permanent deletion markers stop stale offline edits from recreating deleted books. New cloud writes use a server update timestamp and a monotonically increasing document revision. Strict builds use native read timestamps; production compatibility builds retain ISO strings for old readers. Both formats remain readable.
 
-Account deletion requires online sync and fresh authentication. Restoration intents are persisted before cloud deletion. If cleanup or identity deletion fails, local books remain recoverable and normal sync can restore cloud records. Atomic deletion across Firebase Auth and Firestore requires a trusted server workflow; the client does not claim that guarantee. A crash after identity deletion but before local cleanup can leave inaccessible old-user rows on the device.
+Strict builds read the library initially, then use independent book/deletion timestamp cursors with periodic full reconciliation. Compatibility builds use full reads to detect unversioned old-client edits and deletes. See [the compatibility rollout](docs/compatibility-rollout.md) for build modes, rules profiles and transition limits. Cover images use a bounded native disk cache when supported; image availability remains best-effort offline.
+
+Account deletion stays compatible with Spark. A durable local intent and server deletion marker block further writes; client cleanup resumes after reauthentication when the app is reopened online. Local books are removed only after Auth confirms deletion. No paid backend is deployed. See [storage protocol and rollout](docs/storage.md) for conflict policies, limitations, required rules/indexes and the coordinated release procedure. The strict new rules are incompatible with old unversioned client writes and must not be deployed without arranging that rollout.
 
 ## Verification and releases
 
 ```sh
-dart format --output=none --set-exit-if-changed lib test
+dart format --output=none --set-exit-if-changed lib test integration_test
 flutter analyze
 flutter test
 flutter build apk --debug

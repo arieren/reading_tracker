@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 Color bookTypeColor(String type) => switch (type) {
   'Novel' => Colors.blue,
@@ -33,10 +34,11 @@ class BookCover extends StatelessWidget {
       height: height,
       child: imageUrl == null || imageUrl!.isEmpty
           ? _placeholder()
-          : Image.network(
-              imageUrl!,
+          : CachedNetworkImage(
+              imageUrl: imageUrl!,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _placeholder(),
+              placeholder: (_, _) => _placeholder(),
+              errorWidget: (_, _, _) => _placeholder(),
             ),
     ),
   );

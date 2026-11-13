@@ -1,65 +1,15 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show appFlavor;
 import 'package:hive/hive.dart';
 
 import '../models/book.dart';
 import '../models/book_codec.dart';
+import 'book_cloud.dart';
 
-abstract interface class BookCloud {
-  String newId();
-  Future<Map<String, Map<String, dynamic>>> fetch(String uid);
-  Future<void> write(
-    String id,
-    Map<String, dynamic> data, {
-    Map<String, dynamic>? changes,
-  });
-  Future<void> delete(String id);
-}
-
-class FirestoreBookCloud implements BookCloud {
-  CollectionReference<Map<String, dynamic>> get _books =>
-      FirebaseFirestore.instance.collection('books');
-  @override
-  String newId() => _books.doc().id;
-  @override
-  Future<Map<String, Map<String, dynamic>>> fetch(String uid) async {
-    final result = await _books
-        .where('uid', isEqualTo: uid)
-        .get(const GetOptions(source: Source.server));
-    return {for (final doc in result.docs) doc.id: doc.data()};
-  }
-
-  @override
-  Future<void> write(
-    String id,
-    Map<String, dynamic> data, {
-    Map<String, dynamic>? changes,
-  }) {
-    // New books and full restoration writes do not need to read a missing
-    // document. Owner-only read rules commonly reject that read.
-    if (changes == null || data.keys.every(changes.containsKey)) {
-      return _books.doc(id).set(data, SetOptions(merge: true));
-    }
-    return _books.firestore.runTransaction<void>((transaction) async {
-      final ref = _books.doc(id);
-      final existing = await transaction.get(ref);
-      if (existing.exists && existing.data()?['uid'] != data['uid']) {
-        throw StateError('This book belongs to another account.');
-      }
-      transaction.set(
-        ref,
-        existing.exists ? changes : data,
-        SetOptions(merge: true),
-      );
-    });
-  }
-
-  @override
-  Future<void> delete(String id) => _books.doc(id).delete();
-}
+export 'book_cloud.dart';
 
 /// Persist intent before changing the local library. Existing Hive fields stay intact.
 /// Pending local edits win when uploaded; otherwise confirmed server data wins.
@@ -69,12 +19,27 @@ class BookRepository extends ChangeNotifier {
     required this.outbox,
     required this.cloud,
     required this.currentUid,
+    this.deletionState,
+    this.uploadTimeout = const Duration(seconds: 10),
   });
   static late BookRepository instance;
   final Box<Book> books;
   final Box<dynamic> outbox;
   final BookCloud cloud;
   final String? Function() currentUid;
+  final Box<dynamic>? deletionState;
+  final Duration uploadTimeout;
+  final _pendingDeletions = <String>{};
+  bool get deletionPending =>
+      currentUid() != null &&
+      (_pendingDeletions.contains(currentUid()) ||
+          deletionState?.get(currentUid()) == true);
+  Future<void> _rememberDeletion(String uid) async {
+    _pendingDeletions.add(uid);
+    await deletionState?.put(uid, true);
+    notifyListeners();
+  }
+
   Future<void> _tail = Future.value();
   Future<bool>? _syncing;
   String? _syncUid;
@@ -83,6 +48,58 @@ class BookRepository extends ChangeNotifier {
   int _revision = 0;
   String? lastError;
   bool _deletingAccount = false;
+  final _uploads = <String, Future<void>>{};
+  final _writeTails = <String, Future<void>>{};
+
+  List<MapEntry<String, Map<String, dynamic>>> get conflicts => [
+    for (final e in outbox.toMap().entries)
+      if (e.value['uid'] == currentUid() && e.value['conflict'] != null)
+        MapEntry(e.key as String, Map<String, dynamic>.from(e.value as Map)),
+  ];
+
+  Future<void> resolveConflict(String id, {required bool keepLocal}) =>
+      _exclusive(() async {
+        final value = outbox.get(id);
+        if (value == null ||
+            value['uid'] != currentUid() ||
+            value['conflict'] == null) {
+          return;
+        }
+        final op = Map<String, dynamic>.from(value as Map);
+        final remote = Map<String, dynamic>.from(
+          op['conflict']['remote'] as Map,
+        );
+        if (keepLocal) {
+          op['base'] = remote;
+          op['revision'] = cloud.newId();
+          op.remove('conflict');
+          await outbox.put(id, op);
+        } else {
+          final remaining = Map<String, dynamic>.from(
+            (op['changes'] ?? op['data']) as Map,
+          );
+          for (final field in op['conflict']['fields'] as List) {
+            remaining.remove(field);
+          }
+          if (remaining.keys.every((key) => key == 'uid')) {
+            await _apply(decodeBook(id, remote));
+            await outbox.delete(id);
+          } else {
+            op['base'] = remote;
+            op['changes'] = remaining;
+            op['data'] = {...remote, ...remaining};
+            op['create'] = false;
+            op['revision'] = cloud.newId();
+            op.remove('conflict');
+            await outbox.put(id, op);
+            await _apply(
+              decodeBook(id, Map<String, dynamic>.from(op['data'] as Map)),
+            );
+          }
+        }
+        lastError = null;
+        notifyListeners();
+      });
   Future<T> _exclusive<T>(Future<T> Function() action) {
     final result = _tail.then((_) => action());
     _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
@@ -94,7 +111,9 @@ class BookRepository extends ChangeNotifier {
   List<Book> get userBooks =>
       books.values.where((b) => b.uid == currentUid()).toList();
   void _requireOwner(Book b) {
-    if (_deletingAccount) throw StateError('Account deletion is in progress.');
+    if (_deletingAccount || deletionPending) {
+      throw StateError('Resume account deletion before making changes.');
+    }
     if (currentUid() == null || b.uid != currentUid()) {
       throw StateError('Please sign in again.');
     }
@@ -132,8 +151,11 @@ class BookRepository extends ChangeNotifier {
       'delete': false,
       'data': data,
       'changes': changes,
+      'base': pending?['base'] ?? previous,
+      'create': pending?['create'] ?? (existing == null || existing.id == null),
+      if (pending?['conflict'] != null) 'conflict': pending['conflict'],
       'localKey': existing?.key,
-      'revision': '${DateTime.now().microsecondsSinceEpoch}-${_revision++}',
+      'revision': cloud.newId(),
     });
     await _apply(b, index: existing == null ? null : {b.id!: existing});
     notifyListeners();
@@ -148,7 +170,7 @@ class BookRepository extends ChangeNotifier {
         'uid': b.uid,
         'delete': true,
         'localKey': b.key,
-        'revision': '${DateTime.now().microsecondsSinceEpoch}-${_revision++}',
+        'revision': cloud.newId(),
       });
       if (b.isInBox) await b.delete();
     }
@@ -172,7 +194,7 @@ class BookRepository extends ChangeNotifier {
   }
 
   Future<bool> sync({bool force = false}) {
-    if (_deletingAccount) return Future.value(false);
+    if (_deletingAccount || deletionPending) return Future.value(false);
     final uid = currentUid();
     if (uid == null) return Future.value(false);
     if (_syncing != null) {
@@ -227,45 +249,43 @@ class BookRepository extends ChangeNotifier {
       for (final entry in pending) {
         if (currentUid() != uid) return false;
         final op = Map<String, dynamic>.from(entry.value as Map);
-        if (op['delete'] == true) {
-          await cloud
-              .delete(entry.key as String)
-              .timeout(const Duration(seconds: 10));
-        } else {
-          await cloud
-              .write(
-                entry.key as String,
-                Map<String, dynamic>.from(op['data'] as Map),
-                changes: op['changes'] == null
-                    ? null
-                    : Map<String, dynamic>.from(op['changes'] as Map),
-              )
-              .timeout(const Duration(seconds: 10));
-        }
-        await _exclusive(() async {
-          final latest = outbox.get(entry.key);
-          if (currentUid() != uid ||
-              latest == null ||
-              latest['revision'] != op['revision']) {
-            return;
-          }
-          if (op['delete'] == true) {
-            for (final b
-                in books.values
-                    .where((b) => b.uid == uid && b.id == entry.key)
-                    .toList()) {
-              await b.delete();
+        if (op['conflict'] != null) continue;
+        final id = entry.key as String;
+        final operation = '$id/${op['revision']}';
+        var upload = _uploads[operation];
+        if (upload == null) {
+          // A timed-out Future keeps ownership of its acknowledgment. Reusing
+          // it prevents duplicate writes; later edits wait for the old write.
+          final previous = _writeTails[id] ?? Future<void>.value();
+          upload = previous.then((_) async {
+            final latest = await _exclusive(() async {
+              final value = outbox.get(id);
+              return value == null
+                  ? null
+                  : Map<String, dynamic>.from(value as Map);
+            });
+            if (latest == null ||
+                latest['uid'] != uid ||
+                latest['revision'] != op['revision']) {
+              return;
             }
-          } else {
-            await _apply(
-              decodeBook(
-                entry.key as String,
-                Map<String, dynamic>.from(op['data'] as Map),
-              ),
-            );
-          }
-          await outbox.delete(entry.key);
-        });
+            await _upload(id, latest, uid);
+          });
+          _uploads[operation] = upload;
+          _writeTails[id] = upload.then<void>(
+            (_) {},
+            onError: (Object _, StackTrace _) {},
+          );
+          unawaited(
+            upload.then(
+              (_) => _uploads.remove(operation),
+              onError: (Object _, StackTrace _) {
+                _uploads.remove(operation);
+              },
+            ),
+          );
+        }
+        await upload.timeout(uploadTimeout);
       }
       final remote = await cloud
           .fetch(uid)
@@ -295,6 +315,11 @@ class BookRepository extends ChangeNotifier {
         for (final b in books.values.where((b) => b.uid == uid).toList()) {
           if (b.id != null &&
               !remote.containsKey(b.id) &&
+              outbox.get(b.id)?['conflict'] != null) {
+            await outbox.delete(b.id);
+          }
+          if (b.id != null &&
+              !remote.containsKey(b.id) &&
               !outbox.containsKey(b.id)) {
             await b.delete();
           }
@@ -302,14 +327,100 @@ class BookRepository extends ChangeNotifier {
       });
       _lastUid = uid;
       _lastSync = DateTime.now();
-      lastError = null;
+      lastError = conflicts.isEmpty ? null : 'Some books changed on another device. Review conflicts to finish syncing.';
       return true;
+    } on AccountDeletionPendingException {
+      await _rememberDeletion(uid);
+      lastError = 'Account deletion is paused. Reconnect and resume deletion.';
+      return false;
     } on Object catch (error) {
       lastError =
           'Cloud sync unavailable. Changes are saved on this device for retry.';
       debugPrint('Book sync failed: ${error.runtimeType}');
       return false;
     }
+  }
+
+  Future<void> _upload(String id, Map<String, dynamic> op, String uid) async {
+    Map<String, dynamic>? acknowledged;
+    try {
+      if (op['delete'] == true) {
+        await cloud.delete(id, uid: uid);
+      } else {
+        acknowledged = await cloud.write(
+          id,
+          Map<String, dynamic>.from(op['data'] as Map),
+          changes: op['changes'] == null
+              ? null
+              : Map<String, dynamic>.from(op['changes'] as Map),
+          base: op['base'] == null
+              ? null
+              : Map<String, dynamic>.from(op['base'] as Map),
+          operationId: op['revision'] as String,
+          allowCreate: op['create'] != false,
+        );
+      }
+    } on DeletedBookException {
+      await _exclusive(() async {
+        for (final book
+            in books.values.where((b) => b.uid == uid && b.id == id).toList()) {
+          await book.delete();
+        }
+        final latest = outbox.get(id);
+        if (latest?['uid'] == uid) await outbox.delete(id);
+        notifyListeners();
+      });
+      return;
+    } on BookConflictException catch (error) {
+      await _exclusive(() async {
+        final latest = outbox.get(id);
+        if (latest == null ||
+            latest['uid'] != uid ||
+            latest['delete'] == true) {
+          return;
+        }
+        await outbox.put(id, {
+          ...Map<String, dynamic>.from(latest as Map),
+          'conflict': {'remote': error.remote, 'fields': error.fields},
+        });
+        notifyListeners();
+      });
+      return;
+    }
+    await _exclusive(() async {
+      final value = outbox.get(id);
+      if (value == null || value['uid'] != uid) return;
+      final latest = Map<String, dynamic>.from(value as Map);
+      if (latest['revision'] != op['revision']) {
+        if (latest['delete'] != true && acknowledged != null) {
+          final remaining = Map<String, dynamic>.from(
+            (latest['changes'] ?? latest['data']) as Map,
+          );
+          for (final key in remaining.keys.toList()) {
+            if (key != 'uid' && remaining[key] == acknowledged[key]) {
+              remaining.remove(key);
+            }
+          }
+          latest['base'] = acknowledged;
+          latest['changes'] = remaining;
+          latest['create'] = false;
+          latest['data'] = {...acknowledged, ...remaining};
+          // Only journal primitive fields; acknowledgments never contain SDK sentinels.
+          await outbox.put(id, latest);
+        }
+        return;
+      }
+      if (op['delete'] == true) {
+        for (final book
+            in books.values.where((b) => b.uid == uid && b.id == id).toList()) {
+          await book.delete();
+        }
+      } else {
+        await _apply(decodeBook(id, acknowledged!));
+      }
+      await outbox.delete(id);
+      notifyListeners();
+    });
   }
 
   Future<void> _apply(Book incoming, {Map<String, Book>? index}) async {
@@ -380,11 +491,11 @@ class BookRepository extends ChangeNotifier {
     }
   });
 
-  /// Journal restoration before deleting remote records. If authentication or
-  /// cleanup fails, a later sync restores the retained library instead of losing it.
+  /// Intent survives restarts. Spark cleanup resumes in the client; it never
+  /// claims completion before Auth confirms deletion.
   Future<void> deleteAccount({
     required Future<void> Function() reauthenticate,
-    required Future<void> Function() deleteIdentity,
+    required Future<void> Function() requestDeletion,
   }) async {
     if (_deletingAccount) {
       throw StateError('Account deletion is already in progress.');
@@ -393,50 +504,33 @@ class BookRepository extends ChangeNotifier {
     if (uid == null) throw StateError('Please sign in again.');
     await reauthenticate();
     if (currentUid() != uid) throw StateError('Your account changed.');
-    if (!await sync(force: true)) {
-      throw StateError('Connect to the cloud before deleting your account.');
+    if (!deletionPending &&
+        (!await sync(force: true) || conflicts.isNotEmpty)) {
+      throw StateError(
+        'Finish syncing and resolve conflicts before deleting your account.',
+      );
     }
     _deletingAccount = true;
-    var deletedIdentity = false;
     try {
-      if (_syncing != null) await _syncing;
-      final backup = await cloud
-          .fetch(uid)
-          .timeout(const Duration(seconds: 10));
-      await _exclusive(() async {
-        for (final e in backup.entries) {
-          if (e.value['uid'] != uid) throw StateError('Invalid account data.');
-          await _apply(decodeBook(e.key, e.value));
-          await outbox.put(e.key, {
-            'uid': uid,
-            'delete': false,
-            'data': encodeBook(decodeBook(e.key, e.value)),
-            'revision':
-                'restore-${DateTime.now().microsecondsSinceEpoch}-${_revision++}',
-          });
-        }
-      });
-      for (final id in backup.keys) {
-        if (currentUid() != uid) throw StateError('Your account changed.');
-        await cloud.delete(id).timeout(const Duration(seconds: 10));
-      }
-      await deleteIdentity();
-      deletedIdentity = true;
+      await _rememberDeletion(uid);
+      await requestDeletion();
       await _exclusive(() async {
         for (final b in books.values.where((b) => b.uid == uid).toList()) {
           await b.delete();
         }
-        final keys = outbox
-            .toMap()
-            .entries
-            .where((e) => e.value['uid'] == uid)
-            .map((e) => e.key)
-            .toList();
-        await outbox.deleteAll(keys);
+        await outbox.deleteAll(
+          outbox
+              .toMap()
+              .entries
+              .where((e) => e.value['uid'] == uid)
+              .map((e) => e.key)
+              .toList(),
+        );
+        _pendingDeletions.remove(uid);
+        await deletionState?.delete(uid);
       });
     } finally {
       _deletingAccount = false;
-      if (!deletedIdentity && currentUid() == uid) unawaited(sync(force: true));
       notifyListeners();
     }
   }
@@ -445,8 +539,14 @@ class BookRepository extends ChangeNotifier {
     instance = BookRepository(
       books: Hive.box<Book>('books'),
       outbox: await Hive.openBox<dynamic>('book_outbox_v1'),
-      cloud: FirestoreBookCloud(),
+      cloud: FirestoreBookCloud(
+        legacyCompatibility: const bool.fromEnvironment(
+          'LEGACY_DATABASE_COMPATIBILITY',
+          defaultValue: appFlavor != 'staging',
+        ),
+      ),
       currentUid: () => FirebaseAuth.instance.currentUser?.uid,
+      deletionState: await Hive.openBox<dynamic>('account_deletion_v1'),
     );
     await instance.recoverLocalChanges();
   }
