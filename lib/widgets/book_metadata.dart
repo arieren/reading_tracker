@@ -20,7 +20,12 @@ class BookMetadata extends StatelessWidget {
         ),
         child: Text(
           type,
-          style: TextStyle(color: bookTypeColor(type), fontSize: 12),
+          style: TextStyle(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Color.lerp(bookTypeColor(type), Colors.white, 0.4)
+                : bookTypeColor(type),
+            fontSize: 12,
+          ),
         ),
       ),
       Text('Ch. $chapter', style: const TextStyle(fontSize: 12)),

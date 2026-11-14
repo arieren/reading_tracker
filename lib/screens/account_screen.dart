@@ -9,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/import_service.dart';
 import '../widgets/book_import_dialog.dart';
 import '../services/theme_provider.dart';
+import '../services/reading_position.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -82,6 +83,11 @@ class _AccountScreenState extends State<AccountScreen> {
         reauthenticate: () => _auth.reauthenticate(password: password),
         requestDeletion: _auth.requestAccountDeletion,
       );
+      try {
+        await ReadingPositionStore().removeUser(user.uid);
+      } on Object {
+        debugPrint('Local reader settings cleanup unavailable.');
+      }
       await _auth.signOut();
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } on Object catch (error) {
@@ -134,12 +140,33 @@ class _AccountScreenState extends State<AccountScreen> {
           padding: const EdgeInsets.all(24),
           children: [
             if (_busy) const LinearProgressIndicator(),
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: Text(
-                FirebaseAuth.instance.currentUser?.email ?? 'Signed out',
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.account_circle_outlined, size: 32),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your account',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    FirebaseAuth.instance.currentUser?.email ?? 'Signed out',
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${BookRepository.instance.userBooks.length} stories on your shelf',
+                  ),
+                ],
               ),
             ),
+            const SizedBox(height: 20),
             if (deletionPending) ...[
               const Text(
                 'Account deletion is unfinished. Keep the app open and online while resuming. Your library stays on this device until deletion finishes.',

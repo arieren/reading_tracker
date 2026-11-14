@@ -1,4 +1,5 @@
 import '../widgets/book_cover.dart';
+import '../widgets/reset_draft_on_return.dart';
 
 import 'dart:async';
 
@@ -31,7 +32,8 @@ class AddBookScreen extends StatefulWidget {
   State<AddBookScreen> createState() => _AddBookScreenState();
 }
 
-class _AddBookScreenState extends State<AddBookScreen> {
+class _AddBookScreenState extends State<AddBookScreen>
+    with ResetDraftOnReturn<AddBookScreen> {
   final TextEditingController titleController = TextEditingController();
   final TextEditingController chapterController = TextEditingController();
   final TextEditingController imageUrlController = TextEditingController();
@@ -65,14 +67,15 @@ class _AddBookScreenState extends State<AddBookScreen> {
   void didUpdateWidget(covariant AddBookScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isActive && !widget.isActive) {
-      _searchTimer?.cancel();
-      _searchRevision++;
-      if (_isManualEntry) {
-        _isManualEntry = false;
-        _resetForm();
-      }
-      _isSearching = false;
+      resetDraft();
     }
+  }
+
+  @override
+  void resetDraft() {
+    _isManualEntry = false;
+    selectedType = 'Novel';
+    _resetForm();
   }
 
   @override

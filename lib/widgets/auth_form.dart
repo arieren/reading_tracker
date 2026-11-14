@@ -1,3 +1,6 @@
+import 'brand_header.dart';
+import 'reset_draft_on_return.dart';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../services/auth_service.dart';
@@ -12,7 +15,7 @@ class AuthForm extends StatefulWidget {
   State<AuthForm> createState() => _AuthFormState();
 }
 
-class _AuthFormState extends State<AuthForm> {
+class _AuthFormState extends State<AuthForm> with ResetDraftOnReturn<AuthForm> {
   final _email = TextEditingController(),
       _password = TextEditingController(),
       _confirm = TextEditingController();
@@ -26,6 +29,19 @@ class _AuthFormState extends State<AuthForm> {
     AuthFormMode.signup => 'Sign Up',
     AuthFormMode.reset => 'Forgot Password',
   };
+  @override
+  void resetDraft() {
+    _form.currentState?.reset();
+    _email.clear();
+    _password.clear();
+    _confirm.clear();
+    setState(() {
+      _message = null;
+      _failed = false;
+      _hidden = true;
+    });
+  }
+
   @override
   void dispose() {
     _email.dispose();
@@ -140,31 +156,7 @@ class _AuthFormState extends State<AuthForm> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: colors.primaryContainer,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Icon(
-                              Icons.auto_stories_outlined,
-                              size: 30,
-                              color: colors.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'READING TRACKER',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.8,
-                          ),
-                        ),
-                        const SizedBox(height: 28),
+                        const FadeIn(child: BrandHeader()),
                         Text(
                           switch (widget.mode) {
                             AuthFormMode.login => 'Welcome back',

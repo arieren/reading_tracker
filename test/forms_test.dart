@@ -93,7 +93,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.userBooks.single.chapter, 9);
     expect(repository.userBooks.single.linkURL, savedText);
-    expect(find.text('Edit Book'), findsNothing);
+    expect(find.text('Edit book'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

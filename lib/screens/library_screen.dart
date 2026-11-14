@@ -1,3 +1,4 @@
+import '../widgets/reset_draft_on_return.dart';
 import '../widgets/book_metadata.dart';
 import '../widgets/library_empty_state.dart';
 import '../widgets/book_cover.dart';
@@ -12,19 +13,22 @@ import 'package:material_ui/material_ui.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/book.dart';
+import '../services/reading_page.dart';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/book_sync_service.dart';
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
+  const LibraryScreen({super.key, this.isActive = true});
+  final bool isActive;
+
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends State<LibraryScreen>
+    with ResetDraftOnReturn<LibraryScreen> {
   late Box<Book> bookBox;
   String _sortOption = 'Title';
   final TextEditingController _searchController = TextEditingController();
@@ -37,6 +41,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final Set<Book> _selectedBooks = {};
 
   final BookSyncService _syncService = BookSyncService();
+
+  @override
+  void resetDraft() {
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+      _isEditingMode = false;
+      _selectedBooks.clear();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant LibraryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) resetDraft();
+  }
 
   @override
   void initState() {
@@ -62,6 +82,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // New method to handle reading a book from the library
   Future<void> _readBook(BuildContext context, Book book) =>
       openBookReader(context, book);
+
+  void _openBook(Book book) {
+    if (isReadingUrl(book.linkURL)) {
+      unawaited(_readBook(context, book));
+    } else {
+      unawaited(_showEditDialog(book));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -217,8 +245,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<Book> _getFilteredAndSortedBooks() {
-    final user = FirebaseAuth.instance.currentUser;
-    final userId = user?.uid ?? '';
+    final userId = BookRepository.instance.currentUid();
 
     final books = bookBox.values
         .where(
@@ -330,7 +357,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             }
           });
         } else {
-          _showEditDialog(book);
+          _openBook(book);
         }
       },
       onLongPress: () {
@@ -358,6 +385,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 fit: StackFit.expand,
                 children: [
                   BookCover(imageUrl: book.imageUrl, type: book.type),
+                  if (!_isEditingMode)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: IconButton.filledTonal(
+                        tooltip: 'Edit ${book.title}',
+                        onPressed: () => _showEditDialog(book),
+                        icon: const Icon(Icons.more_horiz_rounded, size: 20),
+                      ),
+                    ),
                   if (isSelected)
                     Positioned(
                       top: 8,
@@ -424,7 +461,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             }
           });
         } else {
-          _showEditDialog(book);
+          _openBook(book);
         }
       },
       onLongPress: () {
@@ -503,6 +540,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 Icons.check_circle,
                 color: Theme.of(context).primaryColor,
               ),
+            ),
+          if (!_isEditingMode)
+            IconButton(
+              tooltip: 'Edit ${book.title}',
+              onPressed: () => _showEditDialog(book),
+              icon: const Icon(Icons.more_horiz_rounded),
             ),
         ],
       ),

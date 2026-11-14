@@ -2,10 +2,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 Color bookTypeColor(String type) => switch (type) {
-  'Novel' => Colors.blue,
-  'Manga' => Colors.red,
-  'Manhwa' => Colors.purple,
-  'Light Novel' => Colors.amber.shade800,
+  'Novel' => const Color(0xFF448B78),
+  'Manga' => const Color(0xFFB85E75),
+  'Manhwa' => const Color(0xFF8D6AB5),
+  'Light Novel' => const Color(0xFFAC772B),
   _ => Colors.grey,
 };
 

@@ -4,5 +4,7 @@
     <!-- Android emulator's host alias, used only by local Firebase tests. -->
     <domain-config cleartextTrafficPermitted="true">
         <domain>10.0.2.2</domain>
+        <!-- Local-only reader fixtures; production networking remains unchanged. -->
+        <domain>127.0.0.1</domain>
     </domain-config>
 </network-security-config>

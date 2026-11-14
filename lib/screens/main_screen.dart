@@ -1,16 +1,20 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'home_screen.dart';
 import 'account_screen.dart';
 import 'library_screen.dart';
 import 'add_book_screen.dart';
+import 'browse_screen.dart';
 import '../data/book_repository.dart';
 import '../widgets/account_button.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
+
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -50,22 +54,29 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   void _initializePages() {
     _pages = [
-      HomeScreen(),
-      LibraryScreen(),
+      HomeScreen(onExplore: () => _onItemTapped(1)),
+      const BrowseScreen(isActive: false),
+      const LibraryScreen(isActive: false),
       AddBookScreen(onBookAdded: _onBookAdded, isActive: false),
     ];
   }
 
   void _onBookAdded() {
-    _onItemTapped(1);
+    _onItemTapped(2);
   }
 
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    unawaited(HapticFeedback.selectionClick());
     setState(() {
       _selectedIndex = index;
-      _pages[2] = AddBookScreen(
+      _pages[1] = BrowseScreen(isActive: index == 1);
+      _pages[2] = LibraryScreen(isActive: index == 2);
+
+      _pages[3] = AddBookScreen(
         onBookAdded: _onBookAdded,
-        isActive: index == 2,
+        isActive: index == 3,
       );
     });
   }
@@ -123,6 +134,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               appBar: AppBar(
                 automaticallyImplyLeading: false,
                 leading: _selectedIndex == 0 ? const ReaderHelpButton() : null,
+                title: Text(
+                  'Reading Tracker',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    letterSpacing: 0,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
                 actions: const [AccountButton(), SizedBox(width: 8)],
                 elevation: 0,
                 scrolledUnderElevation: 0,
@@ -180,42 +199,37 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildBottomNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: Offset(0, -2),
-          ),
-        ],
+  Widget _buildBottomNavBar() => Container(
+    decoration: BoxDecoration(
+      border: Border(
+        top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
-      child: BottomNavigationBar(
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.book_outlined),
-            activeIcon: Icon(Icons.book),
-            label: 'Library',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            activeIcon: Icon(Icons.add_circle),
-            label: 'Add',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Theme.of(context).unselectedWidgetColor,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-      ),
-    );
-  }
+    ),
+    child: NavigationBar(
+      selectedIndex: _selectedIndex,
+      onDestinationSelected: _onItemTapped,
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.cottage_outlined),
+          selectedIcon: Icon(Icons.cottage_rounded),
+          label: 'Home',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.explore_outlined),
+          selectedIcon: Icon(Icons.explore_rounded),
+          label: 'Browse',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.auto_stories_outlined),
+          selectedIcon: Icon(Icons.auto_stories_rounded),
+          label: 'Library',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.add_circle_outline),
+          selectedIcon: Icon(Icons.add_circle_rounded),
+          label: 'Add',
+        ),
+      ],
+    ),
+  );
 }

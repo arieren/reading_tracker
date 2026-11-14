@@ -7,7 +7,15 @@ class AccountButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => IconButton(
     tooltip: 'Account',
-    icon: const Icon(Icons.account_circle),
+    icon: CircleAvatar(
+      radius: 17,
+      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      child: Icon(
+        Icons.person_outline_rounded,
+        color: Theme.of(context).colorScheme.onPrimaryContainer,
+        size: 22,
+      ),
+    ),
     onPressed: () => Navigator.push(
       context,
       MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
@@ -26,7 +34,7 @@ class ReaderHelpButton extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Recently Read'),
         content: const Text(
-          'Continue opens the saved reading link. Use the save button in the reader to keep the current URL. Chapter progress can be changed in Edit Book. Changes are saved locally before cloud sync.',
+          'Tap a saved story to read. Browse lets you browse reading sites and save a story without copying its link. Matching reading pages save automatically; the bookmark button can save any page you choose. Clear chapter labels can update your chapter automatically. Tap the chapter control to correct it. Fullscreen hides the controls. Your place is saved locally before cloud sync.',
         ),
         actions: [
           TextButton(

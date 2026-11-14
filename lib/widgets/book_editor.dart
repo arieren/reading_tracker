@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/book.dart';
 import '../models/book_codec.dart';
 import '../data/book_repository.dart';
+import 'book_cover.dart';
 
 enum BookEditorAction { saved, read }
 
@@ -10,9 +11,11 @@ Future<BookEditorAction?> showBookEditor(
   BuildContext context,
   Book book, {
   bool allowRead = false,
-}) => showDialog<BookEditorAction>(
-  context: context,
-  builder: (_) => _BookEditor(book: book, allowRead: allowRead),
+}) => Navigator.of(context).push<BookEditorAction>(
+  MaterialPageRoute(
+    fullscreenDialog: true,
+    builder: (_) => _BookEditor(book: book, allowRead: allowRead),
+  ),
 );
 
 class _BookEditor extends StatefulWidget {
@@ -43,11 +46,14 @@ class _BookEditorState extends State<_BookEditor> {
   Future<void> _save(BookEditorAction action) async {
     if (_busy) return;
     final chapter = int.tryParse(_chapter.text);
-    if (chapter == null) {
-      setState(() => _error = 'Enter a whole chapter number.');
+    if (chapter == null || chapter < 0) {
+      setState(() => _error = 'Enter a whole chapter number, zero or higher.');
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       final original = widget.book;
       final edited = Book(
@@ -64,11 +70,11 @@ class _BookEditorState extends State<_BookEditor> {
       );
       await BookRepository.instance.save(edited, original: original);
       if (mounted) Navigator.pop(context, action);
-    } on Object catch (e) {
+    } on Object catch (error) {
       if (mounted) {
         setState(
-          () => _error = e is FormatException
-              ? e.message.toString()
+          () => _error = error is FormatException
+              ? error.message.toString()
               : 'Unable to save. Please try again.',
         );
       }
@@ -80,66 +86,143 @@ class _BookEditorState extends State<_BookEditor> {
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_busy,
-    child: AlertDialog(
-      title: const Text('Edit Book'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            TextField(
-              controller: _title,
-              decoration: const InputDecoration(labelText: 'Title'),
+    child: Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Cancel',
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          icon: const Icon(Icons.close),
+        ),
+        title: const Text('Edit book'),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => _save(BookEditorAction.saved),
+            child: Text(_busy ? 'Saving…' : 'Save'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BookCover(
+                      imageUrl: widget.book.imageUrl,
+                      type: _type,
+                      width: 64,
+                      height: 92,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.book.title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Update your details and reading progress.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ),
+                TextField(
+                  controller: _title,
+                  enabled: !_busy,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Title'),
+                ),
+                const SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                  initialValue: _type,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: bookTypes
+                      .map(
+                        (type) =>
+                            DropdownMenuItem(value: type, child: Text(type)),
+                      )
+                      .toList(),
+                  onChanged: _busy
+                      ? null
+                      : (value) => setState(() => _type = value!),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _chapter,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Chapter'),
+                ),
+                const SizedBox(height: 28),
+                Text('Reading', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _link,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: 'Reading link (optional)',
+                    helperText: validWebUrl(widget.book.linkURL)
+                        ? 'The page to open when you tap Read.'
+                        : 'Saved text will be kept. Replace it with a full web address to use it as a link.',
+                    helperMaxLines: 4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _image,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Image link (optional)',
+                    helperText: 'Leave blank to use the book placeholder.',
+                    helperMaxLines: 2,
+                  ),
+                ),
+                if (widget.allowRead) ...[
+                  const SizedBox(height: 28),
+                  OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _save(BookEditorAction.read),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Save and read'),
+                  ),
+                ],
+              ],
             ),
-            TextField(
-              controller: _chapter,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Chapter'),
-            ),
-            TextField(
-              controller: _link,
-              decoration: InputDecoration(
-                labelText: 'Reading link (optional)',
-                helperText: validWebUrl(widget.book.linkURL) ? null : 'Saved text will be kept. Replace it with a full web address to use it as a link.',
-                helperMaxLines: 3,
-              ),
-            ),
-            TextField(
-              controller: _image,
-              decoration: const InputDecoration(
-                labelText: 'Image link (optional)',
-              ),
-            ),
-            DropdownButton<String>(
-              value: _type,
-              isExpanded: true,
-              items: bookTypes
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                  .toList(),
-              onChanged: _busy ? null : (v) => setState(() => _type = v!),
-            ),
-          ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        if (widget.allowRead)
-          TextButton(
-            onPressed: _busy ? null : () => _save(BookEditorAction.read),
-            child: const Text('Read'),
-          ),
-        ElevatedButton(
-          onPressed: _busy ? null : () => _save(BookEditorAction.saved),
-          child: Text(_busy ? 'Saving...' : 'Save'),
-        ),
-      ],
     ),
   );
 }

@@ -17,6 +17,8 @@ Firebase configuration is in `lib/firebase_options.dart` and `android/app/google
 
 ## Organization
 
+The [cozy visual overhaul and reading flow](docs/visual-overhaul.md) adds website-based Browse, direct reading, conservative automatic bookmarks/chapters, a full-page editor and local scroll restoration. Its native rehearsal uses local fixtures; real provider acceptance remains part of release testing.
+
 - `data/book_repository.dart`: local changes, pending operations, reconciliation and account data cleanup.
 - `data/book_cloud.dart`: Firestore transactions, incremental reads, revisions and deletion markers.
 - `models/book.dart` and `book_codec.dart`: existing Hive schema, cloud serialization and validation.

@@ -12,6 +12,8 @@ import 'screens/login_page.dart';
 import 'services/theme_provider.dart';
 import 'services/app_update_service.dart';
 import 'services/cover_cache.dart';
+import 'theme/app_theme.dart';
+import 'widgets/reset_draft_on_return.dart';
 
 Future<void> initializeApplication() async {
   await initializeFirebaseEnvironment();
@@ -85,12 +87,10 @@ class MyApp extends StatelessWidget {
     create: (_) => ThemeProvider(),
     child: Consumer<ThemeProvider>(
       builder: (context, theme, _) => MaterialApp(
+        navigatorObservers: [draftRouteObserver],
         title: 'Reading Tracker',
-        theme: ThemeData(colorSchemeSeed: Colors.blue),
-        darkTheme: ThemeData(
-          colorSchemeSeed: Colors.blue,
-          brightness: Brightness.dark,
-        ),
+        theme: readingTheme(Brightness.light),
+        darkTheme: readingTheme(Brightness.dark),
         themeMode: theme.themeMode,
         home: UpdateGate(
           checkUpdate: checkUpdate,
