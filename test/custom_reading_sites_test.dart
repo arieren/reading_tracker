@@ -8,7 +8,7 @@ import 'package:reading_tracker/services/reading_sites.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
-    'custom preferred sites persist and default after their removal',
+    'custom preferred sites persist and lookup turns off after removal',
     () async {
       final prefs = ReadingSourcePreferences();
       const source = ReadingSource('My source', 'https://reader.example/');
@@ -17,28 +17,43 @@ void main() {
       final sites = await ReadingSiteStore().load();
       expect(sites.last.name, 'My source');
       await ReadingSiteStore().remove(sites.last);
-      expect(await prefs.load(), ReadingSource.atsu);
+      expect(await prefs.load(), isNull);
     },
   );
   test(
-    'legacy preferences migrate without losing the selected website',
+    'retired provider preferences do not create websites or enable lookup',
     () async {
       SharedPreferences.setMockInitialValues({
-        'preferred_reading_source': 'mangaFire',
+        'preferred_reading_source': 'retired-provider',
       });
-      expect(await ReadingSourcePreferences().load(), ReadingSource.mangaFire);
-      expect(
-        (await ReadingSiteStore().load()).last.url,
-        ReadingSource.mangaFire.url,
-      );
+      expect(await ReadingSourcePreferences().load(), isNull);
+      expect(await ReadingSourcePreferences().available(), isEmpty);
+    },
+  );
+  test('new installations start with no websites', () async {
+    expect(await ReadingSourcePreferences().available(), isEmpty);
+  });
+  test(
+    'a formerly selected default cannot recreate a missing website',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'preferred_reading_site':
+            '{"name":"Former default","url":"https://reader.example/"}',
+      });
+      expect(await ReadingSourcePreferences().load(), isNull);
+      expect(await ReadingSiteStore().load(), isEmpty);
     },
   );
   test(
-    'new installations have only Atsu until custom sites are added',
+    'removing and readding a site does not silently reenable automatic lookup',
     () async {
-      expect(await ReadingSourcePreferences().available(), [
-        ReadingSource.atsu,
-      ]);
+      const source = ReadingSource('My reader', 'https://reader.example/');
+      final preferences = ReadingSourcePreferences();
+      await preferences.save(source);
+      final store = ReadingSiteStore();
+      await store.remove((await store.load()).single);
+      await store.add(source.label, source.url);
+      expect(await preferences.load(), isNull);
     },
   );
   test('unknown site uses its own search form and validates the exact detail title', () async {

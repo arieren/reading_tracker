@@ -12,8 +12,8 @@ class ReadingSourceSetting extends StatefulWidget {
 
 class _ReadingSourceSettingState extends State<ReadingSourceSetting> {
   late final _preferences = widget.preferences ?? ReadingSourcePreferences();
-  ReadingSource _source = ReadingSource.atsu;
-  List<ReadingSource> _choices = [ReadingSource.atsu];
+  ReadingSource? _source;
+  List<ReadingSource> _choices = [];
   bool _busy = true;
   String? _error;
   @override
@@ -43,8 +43,9 @@ class _ReadingSourceSettingState extends State<ReadingSourceSetting> {
     }
   }
 
-  Future<void> _save(ReadingSource? source) async {
-    if (source == null || _busy) return;
+  Future<void> _save(String? url) async {
+    if (url == null || _busy) return;
+    final source = _choices.where((source) => source.url == url).firstOrNull;
     setState(() {
       _busy = true;
       _error = null;
@@ -69,37 +70,44 @@ class _ReadingSourceSettingState extends State<ReadingSourceSetting> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Reading links', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        const Text(
-          'When adding manga, manhwa or light novels without a link, look for an exact title on this site.',
+        Text(
+          'Link preferences',
+          style: Theme.of(context).textTheme.titleMedium,
         ),
+        const SizedBox(height: 8),
+        const Text('Optional lookup for entries with no link.'),
         const SizedBox(height: 16),
-        DropdownButtonFormField<ReadingSource>(
+        DropdownButtonFormField<String>(
           key: ValueKey(_source),
-          initialValue: _source,
+          initialValue: _source?.url ?? '',
           isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Preferred reading site',
-          ),
-          items: _choices
-              .map(
-                (source) => DropdownMenuItem(
-                  value: source,
-                  child: Text(
-                    source.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+          decoration: const InputDecoration(labelText: 'Lookup website'),
+          items: [
+            const DropdownMenuItem(
+              value: '',
+              child: Text(
+                'Off — no automatic lookup',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ..._choices.map(
+              (source) => DropdownMenuItem(
+                value: source.url,
+                child: Text(
+                  source.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-              .toList(),
+              ),
+            ),
+          ],
           onChanged: _busy ? null : _save,
         ),
         const Padding(
           padding: EdgeInsets.only(top: 8),
           child: Text(
-            'Automatic search is best effort. You can also open any saved website and save a story from its page.',
+            'Results depend on the website. Links can always be entered manually.',
           ),
         ),
         TextButton.icon(

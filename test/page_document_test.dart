@@ -3,6 +3,16 @@ import 'package:reading_tracker/services/page_document.dart';
 import 'package:reading_tracker/services/reading_metadata.dart';
 
 void main() {
+  test('structured story cover takes priority over a website banner', () {
+    final value = ReadingPageMetadata.fromMap(
+      extractPageDocument(
+        '<h1>Moon Garden</h1><meta property="og:image" content="/site-banner.jpg">'
+            '<script type="application/ld+json">{"@type":"Book","name":"Moon Garden","image":"/moon.jpg"}</script>',
+        'https://reader.example/story',
+      ),
+    );
+    expect(value.image, 'https://reader.example/moon.jpg');
+  });
   test('site branding is not saved as the book title', () {
     final value = ReadingPageMetadata.fromWebViewResult({
       'documentTitle': 'Custom Reader',

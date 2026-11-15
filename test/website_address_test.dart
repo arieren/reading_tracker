@@ -9,10 +9,10 @@ import 'package:reading_tracker/theme/app_theme.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test('browser-style domains become HTTPS while other schemes and notes stay invalid', () {
-    expect(normalizeWebAddress(' atsu.moe '), 'https://atsu.moe');
+    expect(normalizeWebAddress(' reader.example '), 'https://reader.example');
     expect(
-      normalizeWebAddress('mangafire.to/title/book?x=1#chapter'),
-      'https://mangafire.to/title/book?x=1#chapter',
+      normalizeWebAddress('books.example/title/book?x=1#chapter'),
+      'https://books.example/title/book?x=1#chapter',
     );
     expect(
       normalizeWebAddress('reader.example:8443/path'),
@@ -43,10 +43,10 @@ void main() {
   });
   test('website store normalizes domains and detects duplicates', () async {
     final store = ReadingSiteStore();
-    await store.add('MangaFire', 'mangafire.to');
-    expect((await store.load()).last.url, 'https://mangafire.to');
+    await store.add('My books', 'books.example');
+    expect((await store.load()).last.url, 'https://books.example');
     await expectLater(
-      store.add('Again', 'https://mangafire.to/'),
+      store.add('Again', 'https://books.example/'),
       throwsFormatException,
     );
   });
@@ -69,7 +69,7 @@ void main() {
       final emptySize = tester.getSize(find.byType(AlertDialog));
       await tester.enterText(
         find.widgetWithText(TextField, 'Name'),
-        'MangaFire',
+        'My books',
       );
       await tester.enterText(
         find.widgetWithText(TextField, 'Website address'),
@@ -83,14 +83,14 @@ void main() {
       expect(tester.getSize(find.byType(AlertDialog)), emptySize);
       await tester.enterText(
         find.widgetWithText(TextField, 'Website address'),
-        'mangafire.to',
+        'books.example',
       );
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
       expect(
         (await ReadingSiteStore().load()).last.url,
-        'https://mangafire.to',
+        'https://books.example',
       );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -110,11 +110,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextField, 'Website or reading link'),
-      'atsu.moe',
+      'reader.example',
     );
     await tester.tap(find.byTooltip('Open website'));
     await tester.pumpAndSettle();
-    expect(opened, 'https://atsu.moe');
+    expect(opened, 'https://reader.example');
     expect(tester.takeException(), isNull);
   });
 }

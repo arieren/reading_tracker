@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,10 @@ import 'theme/app_theme.dart';
 import 'widgets/reset_draft_on_return.dart';
 import 'widgets/session_gate.dart';
 
+import 'package:flutter/services.dart';
+
+import 'theme/system_ui.dart';
+
 Future<void> initializeApplication() async {
   await initializeFirebaseEnvironment();
   await initializeCoverCache();
@@ -26,8 +31,11 @@ Future<void> initializeApplication() async {
   await BookRepository.initialize();
 }
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   runApp(const ApplicationBootstrap());
 }
 
@@ -94,9 +102,12 @@ class MyApp extends StatelessWidget {
         theme: readingTheme(Brightness.light),
         darkTheme: readingTheme(Brightness.dark),
         themeMode: theme.themeMode,
-        builder: (context, child) => UpdateGate(
-          checkUpdate: checkUpdate,
-          child: child ?? const SizedBox.shrink(),
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value: readingSystemUiStyle(Theme.of(context).brightness),
+          child: UpdateGate(
+            checkUpdate: checkUpdate,
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
         home: home ?? const InitialScreen(),
       ),

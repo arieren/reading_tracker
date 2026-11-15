@@ -4,69 +4,84 @@ import 'package:http/http.dart' as http;
 
 import 'page_document.dart';
 
-import 'reading_link_service.dart' show atsuPosterUrl;
-
 import 'reading_page.dart';
 
 /// Reads public page metadata and the active reader's controls. It deliberately
 /// excludes chapter lists, recommendations and previous/next navigation labels.
 const readingMetadataScript = r'''
 (() => {
-  const text = el => (el?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+  const text = el => (el?.innerText ?? el?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 1000);
   const meta = selector => (document.querySelector(selector)?.content || '').slice(0, 1000);
   const data = {
     documentTitle: (document.title || '').slice(0, 1000),
     series: meta('meta[property="og:title"],meta[name="twitter:title"]'),
-    image: meta('meta[property="og:image"],meta[name="twitter:image"]'),
+    image: '',
     title: '', chapter: '', type: ''
   };
-  // Atsu leaves document.title as "Atsumaru" on some client-rendered pages.
-  // The series-info link identifies the active story; the reader counter is
-  // "Chapter current / total", even when its floating controls are hidden.
-  if (location.hostname === 'atsu.moe' || location.hostname.endsWith('.atsu.moe')) {
-    const parts = location.pathname.split('/').filter(Boolean);
-    if (parts[0] === 'read' && parts[1]) {
-      const info = [...document.querySelectorAll('a[href]')].find(a => {
-        try {
-          const url = new URL(a.href, location.href);
-          return url.origin === location.origin &&
-            (url.pathname === '/manga/' + parts[1] || url.pathname === '/novel/' + parts[1]);
-        } catch (_) { return false; }
-      });
-      if (info) {
-        const label = [...info.querySelectorAll('span')].find(el =>
-          /^.{1,40}\s+info$/i.test(text(el)));
-        if (label) {
-          data.type = text(label).replace(/\s+info$/i, '');
-          if (/^novel$/i.test(data.type)) data.type = 'Light Novel';
-          data.title = text(label.nextElementSibling);
-        }
-      }
-      if (!data.title) {
-        // Atsu's compact reader omits the info-link labels. Its floating
-        // title button repeats the same title in a sizing paragraph and span.
-        const titles = [...document.querySelectorAll('button[aria-hidden]')].map(button => {
-          const sizing = text(button.querySelector('p'));
-          const label = text(button.querySelector('span'));
-          return sizing && sizing === label ? label : '';
-        }).filter(Boolean);
-        if (new Set(titles).size === 1) data.title = titles[0];
-      }
-      const counters = [...document.querySelectorAll('button')].map(text).filter(value =>
-        /^(?:chapter|episode)\s+\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?$/i.test(value));
-      if (new Set(counters).size === 1) data.chapter = counters[0];
-    }
-  }
   data.heading = text(document.querySelector('[data-series-title],[itemprop="name"][data-series],h1'));
+  const generic = value => /^(?:home|reader|read|details|chapters?|chapter list|all chapters|table of contents|contents|menu|search|library|bookmarks?|settings|next|previous|back|type|format|chapter\s*\d*)$/i.test(value);
+  const identity = value => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const siteName = meta('meta[property="og:site_name"]');
+  const visible = el => {
+    const box = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
   if (!data.chapter) {
     const active = document.querySelector('[aria-current="page"],[data-current-chapter]');
     const value = active?.getAttribute('data-current-chapter');
     const label = text(active);
     if (value && /^\d+(?:\.\d+)?$/.test(value)) data.chapter = 'Chapter ' + value;
     else if (/^(?:chapter|ch\.?|episode|ep\.?)\s*[:#\-]?\s*\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?$/i.test(label)) data.chapter = label;
+    if (!data.chapter) {
+      const labels = [...document.querySelectorAll('button,[role="status"]')].map(text).filter(label =>
+        /^(?:chapter|episode)\s+\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?$/i.test(label));
+      if (new Set(labels).size === 1) data.chapter = labels[0];
+    }
   }
   if (!data.type) data.type = meta('meta[property="book:type"],meta[name="media-type"]') ||
     document.querySelector('[data-media-type]')?.getAttribute('data-media-type') || '';
+  // A unique, visible title link near the top is useful on chapter readers whose
+  // browser title is only "Chapters". Do not use arbitrary body text or menus.
+  if ((!data.series || generic(data.series) || identity(data.series) === identity(siteName)) &&
+      (!data.documentTitle || generic(data.documentTitle) || identity(data.documentTitle) === identity(siteName)) &&
+      (!data.heading || generic(data.heading)) && data.chapter) {
+    const controls = [...document.querySelectorAll('a,button,[role="button"]')].slice(0,300).filter(el => {
+      const label = text(el);
+      const box = el.getBoundingClientRect();
+      return visible(el) && box.top >= 0 && box.top < Math.min(220, innerHeight * .35) &&
+        !el.closest('nav,footer,aside,[role="menu"],[role="navigation"]') &&
+        label.length >= 4 && label.length <= 120 && /\p{L}/u.test(label) &&
+        !generic(label) && identity(label) !== identity(siteName) &&
+        !/^(?:chapter|episode|next |previous |sign |log |add |save |start |continue |report |join |share |go |read |show |hide |open |close |upload |download |support )/i.test(label);
+    }).map(text);
+    const unique = [...new Set(controls)];
+    if (unique.length === 1) data.title = unique[0];
+  }
+  if (!data.type) {
+    for (const label of [...document.querySelectorAll('dt,th,span,p,div,strong,b')].slice(0,1500)) {
+      if (!visible(label) || !/^(?:type|format|media type)\s*:?$/i.test(text(label))) continue;
+      const value = text(label.nextElementSibling);
+      if (/^(?:manga|manhua|manhwa|manwha|light[ _-]?novel|web[ _-]?novel|novel)$/i.test(value)) {
+        data.type = value; break;
+      }
+    }
+  }
+  const story = [data.title, data.series, data.documentTitle, data.heading].find(value =>
+    value && !generic(value) && identity(value) !== identity(siteName)) || '';
+  const covers = [...document.querySelectorAll('img')].slice(0,300).filter(el => {
+    const label = el.getAttribute('alt') || '';
+    const hint = [el.id, el.className, label].join(' ');
+    const width = el.naturalWidth || Number(el.getAttribute('width'));
+    const height = el.naturalHeight || Number(el.getAttribute('height'));
+    return !el.closest('nav,header,footer,aside') && !/logo|banner|avatar|icon|sprite/i.test(hint) &&
+      story && (identity(label) === identity(story) || /\b(?:cover|poster)\b/i.test(hint)) &&
+      (!width || !height || (width >= 60 && height >= width * 1.1 && height < width * 2.8));
+  });
+  const coverSources = [...new Set(covers.map(el => el.currentSrc || el.getAttribute('src') || el.getAttribute('data-src')).filter(Boolean))];
+  // Prefer a story-specific cover over a site-wide Open Graph banner.
+  if (coverSources.length === 1) data.image = coverSources[0];
+  if (/logo|banner|favicon|sprite/i.test(data.image)) data.image = '';
   const snippets = [];
   let size = 0;
   const selectors = 'title,meta[property^="og:"],meta[name^="twitter:"],meta[property="book:type"],meta[name="media-type"],script[type="application/ld+json"],h1,[data-series-title],[data-media-type],dl,table,.post-content_item,.info-row,[itemprop="genre"],img[itemprop="image"],link[rel="image_src"]';
@@ -110,7 +125,7 @@ class ReadingPageMetadata {
           (entry.value as String).isEmpty) {
         continue;
       }
-      if (entry.key == 'image' && !isReadingUrl(entry.value as String)) {
+      if (entry.key == 'image' && !isLikelyCoverUrl(entry.value as String)) {
         continue;
       }
       if (entry.key == 'type') {
@@ -147,10 +162,7 @@ class ReadingPageMetadata {
           (field('siteName').isNotEmpty &&
               normalizedStoryTitle(cleaned) ==
                   normalizedStoryTitle(field('siteName'))) ||
-          RegExp(
-            r'^(?:atsumaru|atsu|webtoon|manga plus|home|reader|read|details|chapter\s*\d*)$',
-            caseSensitive: false,
-          ).hasMatch(cleaned)) {
+          isGenericPageTitle(cleaned)) {
         continue;
       }
       title = cleaned;
@@ -172,7 +184,7 @@ class ReadingPageMetadata {
       title: title,
       chapter: chapter,
       type: type,
-      image: isReadingUrl(image) ? image : null,
+      image: isLikelyCoverUrl(image) ? image : null,
     );
   }
 }
@@ -184,79 +196,6 @@ class ReadingMetadataService {
   final Future<http.Response> Function(Uri) request;
 
   Future<ReadingPageMetadata> complete(
-    String url,
-    ReadingPageMetadata page,
-  ) async {
-    final uri = Uri.tryParse(url);
-    final parts = uri?.pathSegments ?? <String>[];
-    if (uri == null ||
-        !isReadingUrl(url) ||
-        !(uri.host == 'atsu.moe' || uri.host.endsWith('.atsu.moe')) ||
-        !([2, 3].contains(parts.length)) ||
-        !['read', 'read-novel', 'manga', 'novel'].contains(parts.first) ||
-        !RegExp(r'^[A-Za-z0-9_-]{1,100}$').hasMatch(parts[1]) ||
-        (page.title.isNotEmpty && page.type != null && page.image != null)) {
-      return _completeCover(url, page);
-    }
-    try {
-      final response = await request(
-        Uri.https('atsu.moe', '/api/manga/page', {'id': parts[1]}),
-      ).timeout(const Duration(seconds: 3));
-      if (response.statusCode != 200 || response.bodyBytes.length > 2000000) {
-        return page;
-      }
-      final responseData = jsonDecode(response.body);
-      final data = responseData is Map ? responseData['mangaPage'] : null;
-      if (data is! Map || data['id'] != parts[1] || data['title'] is! String) {
-        return page;
-      }
-      final details = ReadingPageMetadata.fromMap({
-        'title': data['title'],
-        'type': data['type'],
-        'medium': data['medium'],
-      });
-      final names = [
-        details.title,
-        data['englishTitle'],
-        ...(data['otherNames'] is List
-            ? data['otherNames'] as List
-            : <dynamic>[]),
-      ];
-      if (page.title.isNotEmpty &&
-          !names.whereType<String>().any(
-            (name) =>
-                normalizedStoryTitle(page.title) == normalizedStoryTitle(name),
-          )) {
-        return page;
-      }
-      int? chapter;
-      if (data['chapters'] is List) {
-        for (final entry in data['chapters'] as List) {
-          if (entry is Map && parts.length == 3 && entry['id'] == parts[2]) {
-            final number = entry['number'];
-            if (number is num &&
-                number.isFinite &&
-                number >= 0 &&
-                number <= 2147483647 &&
-                number == number.roundToDouble()) {
-              chapter = number.toInt();
-            }
-            break;
-          }
-        }
-      }
-      return ReadingPageMetadata(
-        title: page.title.isEmpty ? details.title : page.title,
-        chapter: page.chapter ?? chapter,
-        type: page.type ?? details.type,
-        image: page.image ?? atsuPosterUrl(data['poster']),
-      );
-    } on Object {
-      return page;
-    }
-  }
-
-  Future<ReadingPageMetadata> _completeCover(
     String url,
     ReadingPageMetadata page,
   ) async {
@@ -273,6 +212,11 @@ class ReadingMetadataService {
       final details = ReadingPageMetadata.fromMap(
         extractPageDocument(utf8.decode(response.bodyBytes), url),
       );
+      if (page.title.isNotEmpty &&
+          normalizedStoryTitle(details.title) !=
+              normalizedStoryTitle(page.title)) {
+        return page;
+      }
       return ReadingPageMetadata(
         title: page.title.isEmpty ? details.title : page.title,
         chapter: page.chapter ?? details.chapter,

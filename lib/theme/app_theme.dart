@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'system_ui.dart';
+
 ThemeData readingTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final scheme =
@@ -54,6 +56,7 @@ ThemeData readingTheme(Brightness brightness) {
       ),
     ),
     appBarTheme: AppBarTheme(
+      systemOverlayStyle: readingSystemUiStyle(brightness),
       backgroundColor: scheme.surface,
       foregroundColor: scheme.onSurface,
       elevation: 0,

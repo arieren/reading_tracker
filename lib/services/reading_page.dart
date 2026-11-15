@@ -41,9 +41,6 @@ String normalizeWebAddress(String value) {
   return candidate.toString();
 }
 
-Uri atsuTitleSearch(String title) =>
-    Uri.https('atsu.moe', '/explore', {'search': title.trim()});
-
 String normalizedStoryTitle(String title) =>
     title.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
 
@@ -86,19 +83,10 @@ bool pageMatchesBook({
 }
 
 String suggestedStoryTitle(String pageTitle) {
-  var title = pageTitle
+  final title = pageTitle
       .replaceFirst(
         RegExp(
           r'\s*[-–|:]?\s*(?:chapter|ch\.?|episode|ep\.?)\s*[:#\-]?\s*\d+.*$',
-          caseSensitive: false,
-        ),
-        '',
-      )
-      .trim();
-  title = title
-      .replaceFirst(
-        RegExp(
-          r'\s*[-–|]\s*(?:atsumaru|atsu|webtoon|manga plus).*$',
           caseSensitive: false,
         ),
         '',

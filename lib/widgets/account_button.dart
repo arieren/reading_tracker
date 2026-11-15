@@ -34,7 +34,7 @@ class ReaderHelpButton extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Recently Read'),
         content: const Text(
-          'Tap a saved story to read. Browse lets you browse reading sites and save a story without copying its link. Matching reading pages save automatically; the bookmark button can save any page you choose. Clear chapter labels can update your chapter automatically. Tap the chapter control to correct it. Fullscreen hides the controls. Your place is saved locally before cloud sync.',
+          'Tap an entry to open its saved link. Use the bookmark button to save your place, or the chapter control to correct your progress. Website fullscreen keeps the app controls available. Your place is saved locally before cloud sync.',
         ),
         actions: [
           TextButton(

@@ -167,12 +167,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Atsu'), findsOneWidget);
-    expect(find.text('WEBTOON'), findsNothing);
-    expect(find.text('MANGA Plus'), findsNothing);
-    await tester.tap(find.text('Atsu'));
+    expect(find.text('No websites yet'), findsOneWidget);
+    expect(opened, isEmpty);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Website or reading link'),
+      'reader.example',
+    );
+    await tester.tap(find.byTooltip('Open website'));
     await tester.pumpAndSettle();
-    expect(opened, ['https://atsu.moe/explore']);
+    expect(opened, ['https://reader.example']);
     await tester.enterText(
       find.widgetWithText(TextField, 'Website or reading link'),
       'javascript:alert(1)',

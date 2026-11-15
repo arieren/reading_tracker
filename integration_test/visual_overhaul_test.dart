@@ -18,6 +18,7 @@ import 'package:reading_tracker/services/reading_position.dart';
 import 'package:reading_tracker/services/reading_metadata.dart';
 
 import 'package:reading_tracker/theme/app_theme.dart';
+import 'package:reading_tracker/theme/system_ui.dart';
 import 'package:reading_tracker/widgets/auth_form.dart';
 
 import 'package:webview_flutter/webview_flutter.dart';
@@ -30,6 +31,7 @@ void main() {
     tester,
   ) async {
     expect(appFlavor, 'staging');
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     final directory = await Directory.systemTemp.createTemp(
       'visual-rehearsal-',
     );
@@ -61,7 +63,7 @@ void main() {
       request.response.headers.contentType = ContentType.html;
       final newStory = request.uri.path.startsWith('/new/');
       request.response.write(
-        '<!doctype html><html><head><title>${newStory ? 'Atsumaru' : '$title - Chapter $chapter | Atsumaru'}</title><meta property="og:image" content="http://127.0.0.1:${server.port}/cover.png"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="background:#fffaf3;color:#30283d;font-family:sans-serif"><h1>$title</h1><h2 ${newStory ? 'data-current-chapter="$chapter"' : ''}>Chapter $chapter</h2><span data-media-type="Manhwa"></span><p>A fictional local page for reader verification.</p><div style="height:5000px;background:linear-gradient(#eee4f9,#d8eadf)"></div></body></html>',
+        '<!doctype html><html><head><title>${newStory ? 'Reader' : '$title - Chapter $chapter | Reader'}</title><meta property="og:image" content="http://127.0.0.1:${server.port}/cover.png"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="background:#fffaf3;color:#30283d;font-family:sans-serif"><h1>$title</h1><h2 ${newStory ? 'data-current-chapter="$chapter"' : ''}>Chapter $chapter</h2><span data-media-type="Manhwa"></span><p>A fictional local page for reader verification.</p><div style="height:5000px;background:linear-gradient(#eee4f9,#d8eadf)"></div></body></html>',
       );
       await request.response.close();
     });
@@ -78,6 +80,10 @@ void main() {
 
     Widget app(Widget child, {bool dark = false}) => MaterialApp(
       theme: readingTheme(dark ? Brightness.dark : Brightness.light),
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: readingSystemUiStyle(Theme.of(context).brightness),
+        child: child!,
+      ),
       home: child,
     );
     Future<void> reader(String url, {Book? book}) async {
@@ -97,6 +103,12 @@ void main() {
       );
       await tester.tap(find.text('Launch reader'));
       await until(() => find.byType(WebViewWidget).evaluate().isNotEmpty);
+      expect(
+        tester.getTopLeft(find.byTooltip('Close reader')).dy,
+        greaterThanOrEqualTo(
+          tester.view.padding.top / tester.view.devicePixelRatio,
+        ),
+      );
     }
 
     try {
@@ -118,8 +130,37 @@ void main() {
           .platform
           .params
           .controller;
+      await web.runJavaScript('''
+        const fullscreenButton = document.createElement('button');
+        fullscreenButton.textContent = 'Test fullscreen';
+        fullscreenButton.style = 'position:fixed;top:10px;left:10px;width:180px;height:60px;z-index:9999';
+        fullscreenButton.onclick = () => document.documentElement.requestFullscreen();
+        document.body.appendChild(fullscreenButton);
+      ''');
+      await tester.pumpAndSettle();
+      final webOrigin = tester.getTopLeft(find.byType(WebViewWidget));
+      await tester.tapAt(webOrigin + const Offset(70, 35));
+      await until(
+        () => find.byTooltip('Hide reader controls').evaluate().isEmpty,
+      );
+      expect(find.byTooltip('Close reader'), findsOneWidget);
+      expect(find.byTooltip('Previous page'), findsOneWidget);
+      expect(find.byType(ReaderScreen), findsOneWidget);
+      await tester.tap(find.text('Ch. 1'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Previous page'));
+      await until(
+        () => find.byTooltip('Hide reader controls').evaluate().isNotEmpty,
+      );
+      await web.runJavaScript('document.querySelector("button").remove()');
+      debugPrint(
+        'PASS: website fullscreen keeps app controls and dialogs accessible.',
+      );
       await web.runJavaScript(
-        'document.title="Cozy Journey - Chapter 2 | Atsumaru";history.pushState({},"","/story/chapter-2");',
+        'document.title="Cozy Journey - Chapter 2 | Reader";history.pushState({},"","/story/chapter-2");',
       );
       await until(
         () =>
@@ -136,12 +177,19 @@ void main() {
       expect(repo.userBooks.single.chapter, 2);
       expect(repo.userBooks.single.linkURL, '$base/story/chapter-2');
       await web.runJavaScript(
-        'document.title="Cozy Journey - Chapter 2 | Atsumaru";history.pushState({},"","/story/chapter-2");window.scrollTo(0,480);',
+        'document.title="Cozy Journey - Chapter 2 | Reader";history.pushState({},"","/story/chapter-2");window.scrollTo(0,480);',
       );
       await tester.pump(const Duration(seconds: 2));
       await tester.tap(find.byTooltip('Hide reader controls'));
       await tester.pumpAndSettle();
       expect(find.byType(AppBar), findsNothing);
+      expect(
+        tester.getBottomRight(find.byTooltip('Show reader controls')).dy,
+        lessThanOrEqualTo(
+          (tester.view.physicalSize.height - tester.view.padding.bottom) /
+              tester.view.devicePixelRatio,
+        ),
+      );
       await tester.tap(find.byTooltip('Show reader controls'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Close reader'));
@@ -298,12 +346,12 @@ void main() {
         app(Scaffold(body: WebViewWidget(controller: metadataController))),
       );
       await metadataController.loadHtmlString('''
-        <html><head><title>Atsumaru</title></head><body>
-          <a href="/manga/fixture"><span>Manhwa Info</span><span>The Stellar Swordmaster</span></a>
+        <html><head><title>Reader</title></head><body>
+          <h1>The Stellar Swordmaster</h1><meta name="media-type" content="Manhwa">
           <button>Previous Chapter 144</button><button>Chapter 145 / 146</button><button>Next Chapter 146</button>
           <a href="/manga/other"><span>Novel Info</span><span>Another Story</span></a>
         </body></html>
-      ''', baseUrl: 'https://atsu.moe/read/fixture/chapter-id');
+      ''', baseUrl: 'https://reader.example/read/fixture/chapter-id');
       await until(() => fixtureReady);
       dynamic extracted = await metadataController.runJavaScriptReturningResult(
         readingMetadataScript,
@@ -317,12 +365,12 @@ void main() {
       expect(metadata.type, 'Manhwa');
       fixtureReady = false;
       await metadataController.loadHtmlString('''
-        <html><head><title></title></head><body>
+        <html><head><title>Chapters</title></head><body>
           <a href="/manga/3nRa"></a>
-          <button aria-hidden="false"><p class="invisible">Break New World</p><span>Break New World</span></button>
+          <button aria-hidden="false"><p style="visibility:hidden">Break New World</p><span>Break New World</span></button>
           <button>Previous Chapter 34</button><button>Chapter 35 / 68</button><button>Next Chapter 36</button>
         </body></html>
-      ''', baseUrl: 'https://atsu.moe/read/3nRa/Lavmv');
+      ''', baseUrl: 'https://reader.example/read/3nRa/Lavmv');
       await until(() => fixtureReady);
       dynamic compact = await metadataController.runJavaScriptReturningResult(
         readingMetadataScript,
@@ -333,6 +381,33 @@ void main() {
       final compactMetadata = ReadingPageMetadata.fromMap(compact as Map);
       expect(compactMetadata.title, 'Break New World');
       expect(compactMetadata.chapter, 35);
+      await metadataController.runJavaScript(
+        'const other = document.createElement("button");other.textContent="Another Story";document.body.prepend(other)',
+      );
+      final ambiguousMetadata = ReadingPageMetadata.fromWebViewResult(
+        await metadataController.runJavaScriptReturningResult(
+          readingMetadataScript,
+        ),
+        'https://reader.example/read/fixture',
+      );
+      expect(ambiguousMetadata.title, isEmpty);
+      fixtureReady = false;
+      await metadataController.loadHtmlString('''
+        <html><head><title>Moon Garden</title><meta property="og:image" content="/site-logo.png"></head><body>
+          <h1>Moon Garden</h1><p>TYPE</p><p>Manhwa</p>
+          <img alt="Moon Garden" width="100" height="160" src="https://reader.example/covers/moon.jpg">
+        </body></html>
+      ''', baseUrl: 'https://reader.example/story');
+      await until(() => fixtureReady);
+      final visibleMetadata = ReadingPageMetadata.fromWebViewResult(
+        await metadataController.runJavaScriptReturningResult(
+          readingMetadataScript,
+        ),
+        'https://reader.example/story',
+      );
+      expect(visibleMetadata.title, 'Moon Garden');
+      expect(visibleMetadata.type, 'Manhwa');
+      expect(visibleMetadata.image, 'https://reader.example/covers/moon.jpg');
       fixtureReady = false;
       await metadataController.loadHtmlString('''
         <html><head><title>Chapter 9 | Independent Reader</title>
@@ -358,7 +433,7 @@ void main() {
         'PASS: generic website title, cover, type and chapter capture without a site adapter.',
       );
       debugPrint(
-        'PASS: Atsu reader controls detect active story, chapter and media type.',
+        'PASS: generic visible title, labelled type and matching cover extraction.',
       );
       debugPrint('PASS: light/dark visual navigation snapshots captured.');
     } finally {

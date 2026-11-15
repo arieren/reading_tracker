@@ -147,10 +147,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           : Scaffold(
               appBar: AppBar(
                 automaticallyImplyLeading: false,
-                leading: _selectedIndex == 0 ? const ReaderHelpButton() : null,
                 titleSpacing: 8,
                 title: LibraryHeaderButton(onPressed: _showLibraryOverview),
-                actions: const [AccountButton(), SizedBox(width: 8)],
+                actions: [
+                  if (_selectedIndex == 0) const ReaderHelpButton(),
+                  const AccountButton(),
+                  const SizedBox(width: 8),
+                ],
                 elevation: 0,
                 scrolledUnderElevation: 0,
                 shape: Border(

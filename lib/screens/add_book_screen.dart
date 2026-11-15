@@ -465,8 +465,7 @@ class _AddBookScreenState extends State<AddBookScreen>
             book.linkURL = match.url;
             if ((book.imageUrl ?? '').isEmpty) book.imageUrl = match.image;
           } else {
-            lookupNote =
-                'No exact reading-site match; reading link left blank.';
+            lookupNote = 'Reading link left blank. Add one later or configure automatic lookup in settings.';
           }
         } on Object {
           lookupNote =

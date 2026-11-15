@@ -5,6 +5,18 @@ import 'package:html/parser.dart' as html;
 
 import 'reading_page.dart';
 
+bool isGenericPageTitle(String value) => RegExp(
+  r'^(?:home|reader|read|details|chapters?|chapter list|all chapters|table of contents|contents|menu|search|library|bookmark|bookmarks|settings|next|previous|back|type|format|chapter\s*\d*)$',
+  caseSensitive: false,
+).hasMatch(value.trim());
+
+bool isLikelyCoverUrl(String value) =>
+    isReadingUrl(value) &&
+    !RegExp(
+      r'(?:^|[/_.-])(?:logo|banner|icon|favicon|avatar|sprite)(?:[/_.-]|$)',
+      caseSensitive: false,
+    ).hasMatch(Uri.parse(value).path);
+
 String? readingTypeFromText(String value) {
   for (final entry in {
     r'\b(?:light[ _-]?novel|web[ _-]?novel)\b': 'Light Novel',
@@ -100,14 +112,8 @@ Map<String, dynamic> extractPageDocument(String markup, String url) {
       .where(
         (name) =>
             name.isNotEmpty &&
-            ![
-              'home',
-              'reader',
-              'read',
-              'details',
-              'atsumaru',
-              'atsu',
-            ].contains(name),
+            name != identity(site) &&
+            !isGenericPageTitle(name),
       )
       .toSet();
   final matching = works
@@ -163,7 +169,9 @@ Map<String, dynamic> extractPageDocument(String markup, String url) {
   if (type.isEmpty) {
     for (final label
         in document
-            .querySelectorAll('dt,th,.summary-heading,.info-label')
+            .querySelectorAll(
+              'dt,th,.summary-heading,.info-label,span,p,strong,b',
+            )
             .take(80)) {
       if (!RegExp(
         r'^(?:type|format|media type)\s*:?$',
@@ -181,20 +189,50 @@ Map<String, dynamic> extractPageDocument(String markup, String url) {
   dynamic image = work['image'];
   if (image is List) image = image.isEmpty ? null : image.first;
   if (image is Map) image = image['url'] ?? image['contentUrl'];
-  var rawImage = meta(
-    'meta[property="og:image:secure_url"],meta[property="og:image"],meta[name="twitter:image"],meta[name="twitter:image:src"]',
-  );
-  if (rawImage.isEmpty && image is String) rawImage = image;
-  if (rawImage.isEmpty) {
-    final cover = document.querySelector(
-      'img[itemprop="image"],link[rel="image_src"]',
-    );
-    rawImage = cover?.attributes['src'] ?? cover?.attributes['href'] ?? '';
+  bool inPageChrome(Element node) {
+    for (var parent = node.parent; parent != null; parent = parent.parent) {
+      if (['nav', 'header', 'footer', 'aside'].contains(parent.localName)) {
+        return true;
+      }
+    }
+    return false;
   }
+
+  final matchingImages = document
+      .querySelectorAll('img')
+      .where(
+        (node) =>
+            !inPageChrome(node) &&
+            known.contains(identity(node.attributes['alt'])) &&
+            !RegExp(
+              r'logo|banner|avatar|icon|sprite',
+              caseSensitive: false,
+            ).hasMatch(
+              '${node.className} ${node.id} ${node.attributes['alt'] ?? ''}',
+            ),
+      )
+      .toList();
+  final explicitCover = document.querySelector(
+    'img[itemprop="image"],link[rel="image_src"]',
+  );
+  final imageCandidates = [
+    if (image is String) image,
+    if (matchingImages.length == 1)
+      matchingImages.single.attributes['src'] ??
+          matchingImages.single.attributes['data-src'] ??
+          '',
+    explicitCover?.attributes['src'] ?? explicitCover?.attributes['href'] ?? '',
+    meta(
+      'meta[property="og:image:secure_url"],meta[property="og:image"],meta[name="twitter:image"],meta[name="twitter:image:src"]',
+    ),
+  ];
   String cover = '';
-  if (rawImage.isNotEmpty) {
+  for (final rawImage in imageCandidates.where((value) => value.isNotEmpty)) {
     final resolved = Uri.tryParse(url)?.resolve(rawImage).toString();
-    if (isReadingUrl(resolved)) cover = resolved!;
+    if (resolved != null && isLikelyCoverUrl(resolved)) {
+      cover = resolved;
+      break;
+    }
   }
   var chapter = '';
   final active = document.querySelector(

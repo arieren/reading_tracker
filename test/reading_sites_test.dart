@@ -7,19 +7,20 @@ import 'package:reading_tracker/services/reading_sites.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('custom websites survive reopening and can be removed without changing defaults', () async {
-    final store = ReadingSiteStore();
-    await store.add(' My website ', ' https://example.com/stories ');
-    final sites = await ReadingSiteStore().load();
-    expect(sites, hasLength(2));
-    expect(sites.last.name, 'My website');
-    expect(sites.last.url, 'https://example.com/stories');
-    await store.remove(sites.first);
-    expect(await store.load(), hasLength(2));
-    await store.remove(sites.last);
-    expect(await store.load(), hasLength(1));
-  });
-
+  test(
+    'only user added websites survive reopening and every site can be removed',
+    () async {
+      final store = ReadingSiteStore();
+      expect(await store.load(), isEmpty);
+      await store.add(' My website ', ' https://example.com/stories ');
+      final sites = await ReadingSiteStore().load();
+      expect(sites, hasLength(1));
+      expect(sites.single.name, 'My website');
+      expect(sites.single.url, 'https://example.com/stories');
+      await store.remove(sites.single);
+      expect(await store.load(), isEmpty);
+    },
+  );
   test(
     'rejects invalid addresses, credentials, blank names and duplicates',
     () async {
@@ -36,10 +37,7 @@ void main() {
         store.add(' ', 'https://example.com'),
         throwsFormatException,
       );
-      await expectLater(
-        store.add('Atsu again', 'https://atsu.moe/explore#top'),
-        throwsFormatException,
-      );
+
       await store.add('Site', 'https://example.com');
       await expectLater(
         store.add('Site again', 'https://example.com/'),

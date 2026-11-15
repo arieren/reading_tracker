@@ -2,6 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reading_tracker/services/reading_metadata.dart';
 
 void main() {
+  test('navigation headings and obvious logos are not book metadata', () {
+    for (final label in ['Chapters', 'Chapter list', 'All chapters', 'Menu']) {
+      expect(
+        ReadingPageMetadata.fromMap({'documentTitle': label}).title,
+        isEmpty,
+      );
+    }
+    expect(
+      ReadingPageMetadata.fromMap({
+        'title': 'Moon Garden',
+        'image': 'https://reader.example/assets/site-logo.png',
+      }).image,
+      isNull,
+    );
+  });
   test('generic headings cannot mask a changed story title', () {
     final data = ReadingPageMetadata.fromMap({
       'documentTitle': 'Different Story - Chapter 99',
@@ -12,7 +27,7 @@ void main() {
   });
   test('heading supplies a title when the site title is generic', () {
     final data = ReadingPageMetadata.fromMap({
-      'documentTitle': 'Atsumaru',
+      'documentTitle': 'Reader',
       'heading': 'New Adventure',
       'chapter': 'Chapter 5',
     });
@@ -21,7 +36,7 @@ void main() {
   });
   test('reader controls supply title, current chapter and media type', () {
     final data = ReadingPageMetadata.fromMap({
-      'documentTitle': 'Atsumaru',
+      'documentTitle': 'Reader',
       'title': 'The Stellar Swordmaster',
       'chapter': 'Chapter 145 / 146',
       'type': 'Manhwa',
@@ -34,7 +49,8 @@ void main() {
   test('metadata title can be combined with a chapter-only browser title', () {
     final data = ReadingPageMetadata.fromMap({
       'documentTitle': 'Chapter 8',
-      'series': 'A Story | Atsumaru',
+      'series': 'A Story | Reader',
+      'siteName': 'Reader',
       'type': 'Light Novel',
     });
     expect(data.title, 'A Story');
@@ -45,7 +61,7 @@ void main() {
     'unknown site names, types, and fractional chapters are not guessed',
     () {
       final data = ReadingPageMetadata.fromMap({
-        'documentTitle': 'Atsumaru',
+        'documentTitle': 'Reader',
         'chapter': 'Chapter 12.5 / 100',
         'type': 'Comic',
       });

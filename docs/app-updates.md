@@ -27,14 +27,14 @@ requirement available, network/configuration failures alone do not block local u
 
 ## Release order
 
-1. Set the release version in `pubspec.yaml`. Current candidate: `1.2.0+16`.
-   `1.2.0` becomes Android `versionName`; `16` becomes `versionCode`.
+1. Set the release version in `pubspec.yaml`. Current candidate: `1.2.0+17`.
+   `1.2.0` becomes Android `versionName`; `17` becomes `versionCode`.
    `android/app/build.gradle` already reads `flutter.versionName` and
    `flutter.versionCode`. Do not duplicate those numbers in Gradle.
 2. Verify the highest version code across every Play track and uploaded draft.
-   Code 16 is a candidate based on the owner's reported production code 15;
-   it is not independently verified against Play Console. Increase it if used.
-3. Finish review/merge, signing-certificate verification, and internal testing.
+   Code 16 was uploaded for the abandoned draft; use the next unused code 17.
+   Confirm code 17 remains unused before upload.
+3. Finish code review, signing-certificate verification, and device checks.
    Production builds must use the production Firebase configuration and existing
    application ID. See [internal testing](internal-testing-release.md).
 4. Leave production `latest_app_version` at `1.1.4` while the new version is only
@@ -53,3 +53,9 @@ that an old offline app has received a new requirement.
 Do not migrate production users or block legacy clients solely because the value
 was published. The separate [storage migration](user-storage-migration.md) still
 requires backups, verification, and an explicit production rollout.
+
+Authentication is separate between staging and production too. Changing an email
+or connected Google account in Reading Tracker Test does not change the production
+account. After installing the Play update, sign into the existing production
+account first, then change its sign-in details through account settings if wanted.
+Signing into a different Google identity does not transfer the existing library.

@@ -5,26 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'reading_page.dart';
 
 class ReadingSite {
-  const ReadingSite({
-    required this.name,
-    required this.url,
-    this.builtIn = false,
-  });
+  const ReadingSite({required this.name, required this.url});
   final String name;
   final String url;
-  final bool builtIn;
 }
 
 /// Website shortcuts are device preferences, independent of library/cloud data.
 class ReadingSiteStore {
+  static const preferredSourceKey = 'preferred_reading_site';
   static const _key = 'reading_sites';
-  static const defaults = [
-    ReadingSite(name: 'Atsu', url: 'https://atsu.moe/explore', builtIn: true),
-  ];
 
   Future<List<ReadingSite>> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final sites = <ReadingSite>[...defaults];
+    final sites = <ReadingSite>[];
     for (final raw in prefs.getStringList(_key) ?? <String>[]) {
       try {
         final data = jsonDecode(raw);
@@ -65,17 +58,28 @@ class ReadingSiteStore {
   }
 
   Future<void> remove(ReadingSite site) async {
-    if (site.builtIn) return;
     final sites = await load();
-    await _write(
-      sites.where((saved) => saved.builtIn || saved.url != site.url),
-    );
+    await _write(sites.where((saved) => !_sameUrl(saved.url, site.url)));
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(preferredSourceKey);
+    if (raw != null) {
+      try {
+        final selected = jsonDecode(raw);
+        if (selected is Map &&
+            selected['url'] is String &&
+            _sameUrl(selected['url'] as String, site.url)) {
+          await prefs.remove(preferredSourceKey);
+        }
+      } on FormatException {
+        /* Invalid preferences are ignored on load. */
+      }
+    }
   }
 
   Future<void> _write(Iterable<ReadingSite> sites) async {
     final prefs = await SharedPreferences.getInstance();
     final saved = await prefs.setStringList(_key, [
-      for (final site in sites.where((site) => !site.builtIn))
+      for (final site in sites)
         jsonEncode({'name': site.name, 'url': site.url}),
     ]);
     if (!saved) throw StateError('Unable to save website shortcuts.');

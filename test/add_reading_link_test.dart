@@ -47,7 +47,7 @@ void main() {
       (tester) async {
         links.result = found
             ? const ReadingLinkMatch(
-                'https://atsu.moe/manga/story',
+                'https://reader.example/manga/story',
                 image: 'https://images.example/cover.jpg',
               )
             : null;
@@ -87,7 +87,7 @@ void main() {
         expect(links.calls, 1);
         expect(
           repo.userBooks.single.linkURL,
-          found ? 'https://atsu.moe/manga/story' : '',
+          found ? 'https://reader.example/manga/story' : '',
         );
         if (found) {
           expect(

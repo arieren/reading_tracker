@@ -20,13 +20,13 @@ void main() {
     );
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    expect(find.text('Atsu'), findsOneWidget);
-    await tester.tap(find.byType(DropdownButtonFormField<ReadingSource>));
+    expect(find.text('Off — no automatic lookup'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('My reader').last);
     await tester.pumpAndSettle();
     expect(
-      (await ReadingSourcePreferences().load()).url,
+      (await ReadingSourcePreferences().load())!.url,
       'https://reader.example/',
     );
     await tester.pumpWidget(const SizedBox());

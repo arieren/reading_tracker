@@ -24,7 +24,7 @@ class _BrowseScreenState extends State<BrowseScreen>
     with ResetDraftOnReturn<BrowseScreen> {
   final _address = TextEditingController();
   late final _store = widget.store ?? ReadingSiteStore();
-  List<ReadingSite> _sites = ReadingSiteStore.defaults;
+  List<ReadingSite> _sites = [];
   String? _error;
   bool _opening = false;
 
@@ -156,6 +156,22 @@ class _BrowseScreenState extends State<BrowseScreen>
             ],
           ),
           const SizedBox(height: 8),
+          if (_sites.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('No websites yet'),
+                    SizedBox(height: 8),
+                    Text(
+                      'Add a website you use, or open a reading link above. You choose your sources.',
+                    ),
+                  ],
+                ),
+              ),
+            ),
           for (final site in _sites) ...[
             Material(
               color: colors.surfaceContainerLow,
@@ -181,18 +197,16 @@ class _BrowseScreenState extends State<BrowseScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
                 onTap: _opening ? null : () => _open(site.url),
-                trailing: site.builtIn
-                    ? const Icon(Icons.chevron_right_rounded)
-                    : PopupMenuButton<String>(
-                        tooltip: 'Options for ${site.name}',
-                        onSelected: (_) => _remove(site),
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: 'remove',
-                            child: Text('Remove website'),
-                          ),
-                        ],
-                      ),
+                trailing: PopupMenuButton<String>(
+                  tooltip: 'Options for ${site.name}',
+                  onSelected: (_) => _remove(site),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'remove',
+                      child: Text('Remove website'),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 10),

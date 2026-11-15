@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../models/book.dart';
 import '../data/book_repository.dart';
@@ -91,6 +92,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   Timer? _saveTimer;
   Timer? _positionTimer;
   final _positions = ReadingPositionStore();
+  Widget? _fullscreenContent;
+  VoidCallback? _leaveWebsiteFullscreen;
+  bool _disposed = false;
   Future<void> _saveTail = Future.value();
   Book? get _book => BookRepository.instance.userBooks
       .where((b) => b.id == _bookId)
@@ -151,6 +155,31 @@ class _ReaderScreenState extends State<ReaderScreen>
         });
       })
       ..loadRequest(Uri.parse(_url));
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      unawaited(
+        platform.setCustomWidgetCallbacks(
+          onShowCustomWidget: (content, leaveFullscreen) {
+            if (!mounted) {
+              leaveFullscreen();
+              return;
+            }
+            setState(() {
+              _fullscreenContent = content;
+              _leaveWebsiteFullscreen = leaveFullscreen;
+              _focus = false;
+            });
+          },
+          onHideCustomWidget: () {
+            if (!mounted || _disposed) return;
+            setState(() {
+              _fullscreenContent = null;
+              _leaveWebsiteFullscreen = null;
+            });
+          },
+        ),
+      );
+    }
   }
 
   @override
@@ -165,6 +194,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   @override
   void dispose() {
+    _disposed = true;
+    _leaveWebsiteFullscreen?.call();
     _saveTimer?.cancel();
     _positionTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -282,6 +313,10 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _back() async {
+    if (_leaveWebsiteFullscreen case final leave?) {
+      leave();
+      return;
+    }
     if (await _controller.canGoBack()) {
       await _controller.goBack();
     } else {
@@ -466,7 +501,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      book?.title ?? 'Find your next story',
+                      book?.title ?? 'Browser',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -477,11 +512,12 @@ class _ReaderScreenState extends State<ReaderScreen>
                   ],
                 ),
                 actions: [
-                  IconButton(
-                    tooltip: 'Hide reader controls',
-                    onPressed: () => setState(() => _focus = true),
-                    icon: const Icon(Icons.fullscreen_rounded),
-                  ),
+                  if (_fullscreenContent == null)
+                    IconButton(
+                      tooltip: 'Hide reader controls',
+                      onPressed: () => setState(() => _focus = true),
+                      icon: const Icon(Icons.fullscreen_rounded),
+                    ),
                   PopupMenuButton<String>(
                     onSelected: (value) async {
                       if (value == 'reload') {
@@ -525,6 +561,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           child: Stack(
             children: [
               WebViewWidget(controller: _controller),
+              if (_fullscreenContent != null)
+                Positioned.fill(child: _fullscreenContent!),
               if (_loading)
                 LinearProgressIndicator(
                   value: _progress > 0 ? _progress / 100 : null,

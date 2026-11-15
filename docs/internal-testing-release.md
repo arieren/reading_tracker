@@ -1,10 +1,10 @@
-# Internal testing release
+# Release preparation and optional internal testing
 
 ## Current gates
 
-The owner reported that the replacement upload key becomes valid on November 13, 2026 at 8:46 PM; that date has passed. Verify the effective upload certificate in Play Console against the local keystore before signing. `android/key.properties` is not yet configured on this PC (checked November 15). Never commit its passwords or the keystore.
+The owner reported that the replacement upload key becomes valid on November 13, 2026 at 8:46 PM; that date has passed. Verify the effective upload certificate in Play Console against the local keystore before signing. The local signing properties and both passwords were verified on November 15; the certificate matches the owner-supplied Play upload fingerprint. Signing properties remain ignored by Git. Never commit its passwords or the keystore.
 
-Production ownership compatibility rules were deployed and verified separately; see [ownership rollout](ownership-rollout.md). Production accounts have not been migrated to nested storage. The release candidate is now `1.2.0+16`; code 16 still needs verification against all Play uploads. No bundle or Play release has been created by these checks.
+Production ownership compatibility rules were deployed and verified separately; see [ownership rollout](ownership-rollout.md). Production accounts have not been migrated to nested storage. The release candidate is now `1.2.0+17`; code 16 was uploaded to an abandoned production draft. The revised generic-source release uses the next unused code 17. The owner prefers production rollout; no new signed bundle is built automatically.
 
 Do not upload a debug APK as a release. Production internal testing requires a signed Android App Bundle and a version code above every previous Play upload, including drafts and testing tracks.
 
@@ -32,7 +32,7 @@ Do not upload a debug APK as a release. Production internal testing requires a s
 
 ## Build and distribute
 
-1. Check the highest version code in Play Console across all tracks and drafts. The candidate in `pubspec.yaml` is `1.2.0+16`; increase the build number if 16 is already used. Gradle reads both values from Flutter. See [app updates](app-updates.md) for Remote Config timing.
+1. Check the highest version code in Play Console across all tracks and drafts. The candidate in `pubspec.yaml` is `1.2.0+17`; increase the build number if 17 is already used. Gradle reads both values from Flutter. See [app updates](app-updates.md) for Remote Config timing.
 2. Run analysis, app/rule tests and the release build with the approved signing configuration:
 
    ```powershell
@@ -42,8 +42,8 @@ Do not upload a debug APK as a release. Production internal testing requires a s
    ```
 
 3. Verify the AAB is signed with the approved upload certificate and retains application ID `edu.cpp.reading_tracker`. Confirm the embedded Firebase project is `reading-tracker-67f66`, not staging.
-4. In Play Console, create an **Internal testing** release, upload the signed AAB, add release notes/testers, and review the release before distributing it. Installing through Play tests the Play app-signing certificate; local debug sign-in is a separate certificate configuration.
-5. Install through the internal-testing link. Confirm Google sign-in, existing library preservation, offline edits, reconnect and deletion on disposable test data. Do not promote to production until these checks pass.
+4. The owner selected a **Production** release: upload the revised signed AAB to a new production draft, verify version 1.2.0/code 17 and review all warnings before submitting. Internal testing remains an optional alternative for future releases. Installing through Play tests the Play app-signing certificate; local debug sign-in is a separate certificate configuration.
+5. After the selected track becomes available, update the existing Play installation without uninstalling it. Confirm Google sign-in, existing library preservation, offline edits, reconnect and deletion on disposable test data. Keep a backup/export and verify these flows on the owner-controlled account. Database cutover remains separate.
 
 Suggested release notes: “Improved book search and imports, optional book covers, offline synchronization, conflict handling, and account cleanup.” Adjust these to match the final accepted release.
 
