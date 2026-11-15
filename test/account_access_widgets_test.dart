@@ -76,7 +76,7 @@ void main() {
       tester.scrollUntilVisible(
         finder,
         200,
-    scrollable: find.byType(Scrollable).first,
+        scrollable: find.byType(Scrollable).first,
       );
   testWidgets(
     'Google switching stays disabled until password recovery is configured',
