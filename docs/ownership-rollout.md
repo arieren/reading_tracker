@@ -12,6 +12,8 @@ Use a temporary book to check manual add, chapter edit, refresh/reopen, offline 
 
 ## Existing clients and saved text
 
+For release 1.2.1 on 2026-11-15, the default-aware extension in `firestore.account-default.rules` was deployed to staging and production after emulator, native Android and live staging checks. The production source was independently read back and verified. The global setting remains absent, so this extension changes neither migrated checkpoints nor legacy fallback routing until the separately gated activation. Do not replace it with the old ownership policy after global activation.
+
 Root `books/{bookId}` records retain their historical field formats. Authenticated users can create records owned by themselves and edit or delete their own records. They cannot read or change another user's records, remove ownership, or transfer ownership. This deliberately avoids imposing the updated app's complete schema on published older clients. It also means older clients do not gain the updated app's conflict-resolution guarantees.
 
 Nested `users/{uid}/books/{bookId}` records keep schema and revision validation. An existing non-URL `linkURL` string may be retained exactly during an edit, up to the existing length limit. Creating a new invalid link or replacing an existing link with different invalid text is rejected. Valid web-address replacements remain supported.
@@ -38,4 +40,4 @@ Do not restore broad authenticated write access as a rollback. Once an account i
 
 Migration preflight rejects invalid links by default. After reviewing the affected values privately, `--preserve-legacy-link-text` allows copying historical `linkURL` text verbatim. Use the same flag for dry-run and apply; it never relaxes image validation or rewrites text. Preflight reports affected record IDs, and the private typed backup records the policy's affected records. Other validation failures still block the migration.
 
-The migration CLI continues to refuse production mutations. Production account cutover, old-client handling, and any eventual removal of retained root documents require a separate rollout; see [user storage migration](user-storage-migration.md).
+The original migration CLI continues to refuse production mutations. A separately guarded production runner now handles the reviewed pilot and explicit remaining-account rollout; see [production storage rollout](production-storage-rollout.md). After the pilot passed server verification and installed-app acceptance, all planned existing production identities migrated and passed final verification. No retained root documents have been removed.

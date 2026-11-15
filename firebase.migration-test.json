@@ -1,5 +1,5 @@
 {
-  "firestore": { "rules": "firestore.migration.rules" },
+  "firestore": { "rules": "firestore.account-default.rules" },
   "emulators": {
     "auth": { "host": "127.0.0.1", "port": 9095 },
     "firestore": { "host": "127.0.0.1", "port": 8085 },

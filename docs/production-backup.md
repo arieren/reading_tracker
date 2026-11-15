@@ -26,7 +26,7 @@ Do not commit production audit findings or backups. Reports are stored beside pr
 
 ## Run the audit and backup
 
-Prerequisites: Node 24, the existing tool dependencies and administrator ADC access to the chosen source project. Firebase CLI login and ADC are separate; local user ADC is configured using `gcloud.cmd auth application-default login`. The migration apply tool still refuses production writes.
+Prerequisites: Node 24, the existing tool dependencies and administrator ADC access to the chosen source project. Firebase CLI login and ADC are separate; local user ADC is configured using `gcloud.cmd auth application-default login`. The original migration apply tool still refuses production writes; the separately guarded [production rollout](production-storage-rollout.md) requires a verified backup before any cutover.
 
 From `tool/firestore`:
 

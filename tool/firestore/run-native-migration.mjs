@@ -30,9 +30,17 @@ try {
       lastRead: '2025-11-13T10:20:33.315090Z',
     });
   await migrateUser(db, uid, {preserveLegacyLinkText:true});
+  await auth.createUser({
+    uid: 'default-native-fixture',
+    email: 'default-native@example.invalid',
+    password: 'Local-emulator-fixture-12345',
+  });
+  await db.doc('storage_configuration/books').set({state:'ready'});
   const args = [
     'test',
     'integration_test/storage_migration_test.dart',
+    '--no-uninstall',
+    '--no-pub',
     '--flavor',
     'staging',
     '--dart-define=RUN_MIGRATION_EMULATOR_TEST=true',
@@ -70,6 +78,10 @@ try {
     auth.getUser(uid),
     (error) => error.code === 'auth/user-not-found',
   );
+  await assert.rejects(auth.getUser('default-native-fixture'), error => error.code === 'auth/user-not-found');
+  assert.equal((await db.collection('users/default-native-fixture/books').get()).size, 0);
+  assert.equal((await db.doc('storage_migrations/default-native-fixture').get()).exists, false);
+  assert.equal((await db.doc('account_deletions/default-native-fixture').get()).data().status, 'data-cleared');
   console.log(
     'PASS: native migrated-account cleanup verified independently through the local Admin SDK.',
   );

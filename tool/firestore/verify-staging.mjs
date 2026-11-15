@@ -57,6 +57,11 @@ try {
   const [owner, other] = accounts;
   const newer = session('newer');
   await signInWithEmailAndPassword(newer.auth, owner.email, owner.password);
+  const defaultRef = doc(newer.db, 'storage_configuration', 'books');
+  const defaultSetting = await getDocFromServer(defaultRef);
+  assert.ok(!defaultSetting.exists() || defaultSetting.data().state === 'legacy', 'This legacy rehearsal requires an inactive account default.');
+  await denied(setDoc(defaultRef, {state:'ready'}));
+  pass('new clients can read the inactive default but cannot modify routing');
   const id = `compatibility-${nonce}`, ref = doc(owner.db, 'books', id);
   const legacy = {uid:owner.user.uid, title:'Compatibility rehearsal', type:'Manga', chapter:1,
     imageUrl:'', linkURL:'', lastRead:'2025-11-13T10:20:33.315090Z'};

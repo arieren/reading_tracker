@@ -12,23 +12,90 @@ import 'package:reading_tracker/services/account_deletion_service.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  late FirebaseApp app;
+  late FirebaseAuth auth;
+  late FirebaseFirestore db;
+  const runNative = bool.fromEnvironment('RUN_MIGRATION_EMULATOR_TEST');
+  setUpAll(() async {
+    if (!runNative) return;
+    // Share the native SDK instance across cases; delete it only after all tests.
+    app = await Firebase.initializeApp(
+      name: 'migration-emulator',
+      options: const FirebaseOptions(
+        apiKey: 'local-emulator-only',
+        appId: '1:1234567890:android:0123456789',
+        messagingSenderId: '1234567890',
+        projectId: 'demo-reading-tracker',
+      ),
+    );
+    auth = FirebaseAuth.instanceFor(app: app);
+    db = FirebaseFirestore.instanceFor(app: app);
+    db.useFirestoreEmulator('10.0.2.2', 8085);
+    await auth.useAuthEmulator('10.0.2.2', 9095);
+  });
+  tearDownAll(() async {
+    if (!runNative) return;
+    await auth.signOut();
+    await db.terminate();
+    await app.delete();
+  });
+  testWidgets(
+    'native new account follows the global default without a checkpoint',
+    (tester) async {
+      try {
+        final user = (await auth.signInWithEmailAndPassword(
+          email: 'default-native@example.invalid',
+          password: 'Local-emulator-fixture-12345',
+        )).user!;
+        const uid = 'default-native-fixture';
+        expect(user.uid, uid);
+        expect((await db.doc('storage_migrations/$uid').get()).exists, isFalse);
+        final cloud = FirestoreBookCloud(
+          firestore: db,
+          userBookStorage: true,
+          legacyCompatibility: true,
+        );
+        await cloud.write('default-new', {
+          'uid': uid,
+          'title': 'A New Account Story',
+          'type': 'Manga',
+          'chapter': 3,
+          'imageUrl': '',
+          'linkURL': '',
+          'lastRead': null,
+        });
+        expect((await cloud.fetch(uid))['default-new']!['chapter'], 3);
+        expect(
+          (await db.doc('users/$uid/books/default-new').get()).data()!['uid'],
+          uid,
+        );
+        await expectLater(
+          db
+              .doc('books/default-new')
+              .get(const GetOptions(source: Source.server)),
+          throwsA(
+            isA<FirebaseException>().having(
+              (error) => error.code,
+              'code',
+              'permission-denied',
+            ),
+          ),
+        );
+        expect((await db.doc('storage_migrations/$uid').get()).exists, isFalse);
+        await AccountDeletionService(
+          firestore: db,
+          userBookStorage: true,
+        ).delete(uid, deleteIdentity: user.delete);
+      } finally {
+        await auth.signOut();
+      }
+    },
+    skip: !const bool.fromEnvironment('RUN_MIGRATION_EMULATOR_TEST'),
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
   testWidgets(
     'native migrated storage retains offline progress and cleans both layouts',
     (tester) async {
-      // These credentials/project are fictional and accepted only by local emulators.
-      final app = await Firebase.initializeApp(
-        name: 'migration-emulator',
-        options: const FirebaseOptions(
-          apiKey: 'local-emulator-only',
-          appId: '1:1234567890:android:0123456789',
-          messagingSenderId: '1234567890',
-          projectId: 'demo-reading-tracker',
-        ),
-      );
-      final auth = FirebaseAuth.instanceFor(app: app);
-      final db = FirebaseFirestore.instanceFor(app: app);
-      db.useFirestoreEmulator('10.0.2.2', 8085);
-      await auth.useAuthEmulator('10.0.2.2', 9095);
       final user = (await auth.signInWithEmailAndPassword(
         email: 'migration-native@example.invalid',
         password: 'Local-emulator-fixture-12345',
@@ -165,8 +232,6 @@ void main() {
         }
         await directory.delete(recursive: true);
         await auth.signOut();
-        await db.terminate();
-        await app.delete();
       }
     },
     skip: !const bool.fromEnvironment('RUN_MIGRATION_EMULATOR_TEST'),

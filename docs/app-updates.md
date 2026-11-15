@@ -3,7 +3,7 @@
 Firebase **Remote Config**, not Firestore, supplies the string parameter
 `latest_app_version`. The production project is `reading-tracker-67f66`; staging
 uses its own Remote Config in `reading-tracker-test-a734e`.
-Store a version name such as `1.2.0`, not the Android version code `16`.
+Store a version name such as `1.2.1`, not the Android version code `18`.
 The parameter description in the console should say "Required app version name
 available on Google Play" rather than "version code".
 
@@ -27,23 +27,23 @@ requirement available, network/configuration failures alone do not block local u
 
 ## Release order
 
-1. Set the release version in `pubspec.yaml`. Current candidate: `1.2.0+17`.
-   `1.2.0` becomes Android `versionName`; `17` becomes `versionCode`.
+1. Set the release version in `pubspec.yaml`. Current candidate: `1.2.1+18`.
+   `1.2.1` becomes Android `versionName`; `18` becomes `versionCode`.
    `android/app/build.gradle` already reads `flutter.versionName` and
    `flutter.versionCode`. Do not duplicate those numbers in Gradle.
 2. Verify the highest version code across every Play track and uploaded draft.
-   Code 16 was uploaded for the abandoned draft; use the next unused code 17.
-   Confirm code 17 remains unused before upload.
+   Code 17 is the published 1.2.0 release. Confirm code 18 remains unused
+   across all tracks and drafts before upload.
 3. Finish code review, signing-certificate verification, and device checks.
    Production builds must use the production Firebase configuration and existing
    application ID. See [internal testing](internal-testing-release.md).
-4. Leave production `latest_app_version` at `1.1.4` while the new version is only
+4. Leave production `latest_app_version` at `1.2.0` while the new version is only
    an internal test or unavailable to public users. Test the prompt using the
    staging project's Remote Config instead. Testing new code does not change the
    behavior of already installed older binaries. The old 1.1.4 binary's optional
    prompt remains optional; required updates only take effect in this new code.
 5. Once the new release is available to the intended public audience, publish
-   `latest_app_version = 1.2.0` as a string in production Remote Config. For a
+   `latest_app_version = 1.2.1` as a string in production Remote Config. For a
    staged Play rollout, wait until everyone targeted by the prompt is eligible;
    otherwise some people will see a prompt without an available update.
 
@@ -53,6 +53,24 @@ that an old offline app has received a new requirement.
 Do not migrate production users or block legacy clients solely because the value
 was published. The separate [storage migration](user-storage-migration.md) still
 requires backups, verification, and an explicit production rollout.
+
+## Version 1.2.1 account-default rollout
+
+All accounts in the existing production migration plan have already switched to
+nested storage. Version 1.2.1 additionally reads the administrator-controlled
+default for accounts without a checkpoint. This support is enabled by default;
+the normal production bundle command needs no extra flag beyond the existing
+user-storage and legacy-format compatibility flags. The matching rules must be
+deployed before distribution so a missing checkpoint can read the default setting.
+An absent setting continues using legacy routing; deploying these rules does not
+activate the new default or move records.
+
+After Play makes 1.2.1 available, update the existing installation and test it,
+then publish the 1.2.1 Remote Config requirement. Only after these checks should
+the guarded account-default activation runner perform its fresh census and any
+late-account migration. Do not manually set `storage_configuration/books`.
+See [production rollout](production-storage-rollout.md). Until that activation,
+new signups continue on legacy routing; existing migrated accounts stay nested.
 
 Authentication is separate between staging and production too. Changing an email
 or connected Google account in Reading Tracker Test does not change the production
