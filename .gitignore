@@ -59,3 +59,6 @@ android/app/.cxx/
 **/ownership-native-results.log
 **/visual-test-results.log
 **/visual-native-results.log
+
+# Kotlin compiler session artifacts
+android/.kotlin/

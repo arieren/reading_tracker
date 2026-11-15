@@ -6,6 +6,9 @@ import 'dart:async';
 import '../data/book_repository.dart';
 import '../models/book_codec.dart' as validation;
 import '../services/catalog_service.dart';
+import '../services/reading_link_service.dart';
+import '../services/reading_metadata.dart';
+import '../services/reading_page.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
@@ -21,11 +24,13 @@ class AddBookScreen extends StatefulWidget {
     this.repository,
     this.currentUid,
     this.catalog,
+    this.readingLinks,
     this.isActive = true,
   });
   final BookRepository? repository;
   final String? Function()? currentUid;
   final CatalogService? catalog;
+  final ReadingLinkService? readingLinks;
   final bool isActive;
 
   @override
@@ -256,7 +261,7 @@ class _AddBookScreenState extends State<AddBookScreen>
 
   Widget _buildImagePreview() {
     final imageUrl = _isManualEntry
-        ? imageUrlController.text.trim()
+        ? normalizeWebAddress(imageUrlController.text)
         : selectedImage;
 
     return Center(
@@ -430,14 +435,14 @@ class _AddBookScreenState extends State<AddBookScreen>
       return;
     }
     final image = _isManualEntry
-        ? imageUrlController.text.trim()
+        ? normalizeWebAddress(imageUrlController.text)
         : selectedImage;
     final book = Book(
       title: titleController.text.trim(),
       type: selectedType,
       chapter: chapter,
       imageUrl: image == null || image.isEmpty ? null : image,
-      linkURL: linkUrlController.text.trim(),
+      linkURL: normalizeWebAddress(linkUrlController.text),
       uid: uid,
     );
     try {
@@ -446,15 +451,44 @@ class _AddBookScreenState extends State<AddBookScreen>
       _showErrorSnackbar(e.message.toString());
       return;
     }
+    String? lookupNote;
     setState(() => _isLoading = true);
     try {
+      if ((book.linkURL ?? '').trim().isEmpty &&
+          ReadingLinkService.supports(book.type)) {
+        try {
+          final match =
+              await (widget.readingLinks ?? ReadingLinkService.instance).find(
+                book,
+              );
+          if (match != null) {
+            book.linkURL = match.url;
+            if ((book.imageUrl ?? '').isEmpty) book.imageUrl = match.image;
+          } else {
+            lookupNote =
+                'No exact reading-site match; reading link left blank.';
+          }
+        } on Object {
+          lookupNote =
+              'Reading-site lookup unavailable; you can add a link later.';
+        }
+      } else if ((book.imageUrl ?? '').isEmpty &&
+          (book.linkURL ?? '').isNotEmpty) {
+        final details = await ReadingMetadataService().complete(
+          book.linkURL!,
+          ReadingPageMetadata(title: book.title, chapter: book.chapter),
+        );
+        book.imageUrl = details.image;
+      }
       await _repository.save(book);
       unawaited(_repository.sync(force: true));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Book saved on this device. Cloud sync will retry if needed.',
+            lookupNote == null
+                ? 'Book saved on this device. Cloud sync will retry if needed.'
+                : 'Book saved. $lookupNote',
           ),
         ),
       );

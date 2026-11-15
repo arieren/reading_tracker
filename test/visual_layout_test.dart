@@ -180,7 +180,7 @@ void main() {
     await tester.tap(find.byTooltip('Open website'));
     await tester.pumpAndSettle();
     expect(opened, hasLength(1));
-    expect(find.textContaining('Enter a full'), findsOneWidget);
+    expect(find.textContaining('Enter a valid'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

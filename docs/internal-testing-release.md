@@ -2,7 +2,9 @@
 
 ## Current gates
 
-The upload-key reset is still pending (confirmed by the project owner). The replacement keystore exists locally, but `android/key.properties` is not configured. No production rules, production data, Play release, application ID or version number is changed by the staging rehearsal.
+The owner reported that the replacement upload key becomes valid on November 13, 2026 at 8:46 PM; that date has passed. Verify the effective upload certificate in Play Console against the local keystore before signing. `android/key.properties` is not yet configured on this PC (checked November 15). Never commit its passwords or the keystore.
+
+Production ownership compatibility rules were deployed and verified separately; see [ownership rollout](ownership-rollout.md). Production accounts have not been migrated to nested storage. The release candidate is now `1.2.0+16`; code 16 still needs verification against all Play uploads. No bundle or Play release has been created by these checks.
 
 Do not upload a debug APK as a release. Production internal testing requires a signed Android App Bundle and a version code above every previous Play upload, including drafts and testing tracks.
 
@@ -26,17 +28,17 @@ Do not upload a debug APK as a release. Production internal testing requires a s
 - Finish old/new APK acceptance against staging, including Google sign-in, search/import, cover rendering, actual process restart, competing edits, deletion, and interrupted account deletion. Native integration/SDK checks supplement this acceptance; they do not claim every screen was tested.
 - Preserve the current deployed production rules and obtain a secure production data backup. Verify it can be read/restored before any migration. No production backup is created by the staging checks.
 - Inspect representative production book formats for compatibility. Do not rewrite user records just to make a test pass.
-- Review and deploy the temporary compatibility rules to the explicit production project before publishing the production compatibility build. Follow `compatibility-rollout.md`; strict rules are a later coordinated cutover.
+- Confirm the deployed migration-aware ownership compatibility rules remain in place. Follow `ownership-rollout.md`; do not deploy an older rules profile over them. Account cutover remains a separate coordinated operation.
 
 ## Build and distribute
 
-1. Check the highest version code in Play Console and choose a larger one. Update the version in `pubspec.yaml` deliberately; the current source is `1.1.4+15`. Do not assume 16 is unused.
+1. Check the highest version code in Play Console across all tracks and drafts. The candidate in `pubspec.yaml` is `1.2.0+16`; increase the build number if 16 is already used. Gradle reads both values from Flutter. See [app updates](app-updates.md) for Remote Config timing.
 2. Run analysis, app/rule tests and the release build with the approved signing configuration:
 
    ```powershell
    flutter analyze
    flutter test
-   flutter build appbundle --release --flavor production --dart-define=LEGACY_DATABASE_COMPATIBILITY=true
+   flutter build appbundle --release --flavor production --dart-define=USER_BOOK_STORAGE=true --dart-define=LEGACY_DATABASE_COMPATIBILITY=true
    ```
 
 3. Verify the AAB is signed with the approved upload certificate and retains application ID `edu.cpp.reading_tracker`. Confirm the embedded Firebase project is `reading-tracker-67f66`, not staging.
@@ -45,4 +47,4 @@ Do not upload a debug APK as a release. Production internal testing requires a s
 
 Suggested release notes: “Improved book search and imports, optional book covers, offline synchronization, conflict handling, and account cleanup.” Adjust these to match the final accepted release.
 
-Keep production rollout and the later database reorganization separate. No Firebase collection migration is included here.
+The production build includes migration-aware routing, while unmigrated accounts continue using root collections. Keep production rollout and the later database reorganization separate. No Firebase collection migration is included here. Do not raise production Remote Config until the Play update is available to its intended audience.

@@ -8,12 +8,14 @@ import 'data/book_repository.dart';
 import 'services/firebase_environment.dart';
 import 'models/book.dart';
 import 'screens/main_screen.dart';
+import 'screens/app_update_screen.dart';
 import 'screens/login_page.dart';
 import 'services/theme_provider.dart';
 import 'services/app_update_service.dart';
 import 'services/cover_cache.dart';
 import 'theme/app_theme.dart';
 import 'widgets/reset_draft_on_return.dart';
+import 'widgets/session_gate.dart';
 
 Future<void> initializeApplication() async {
   await initializeFirebaseEnvironment();
@@ -92,25 +94,33 @@ class MyApp extends StatelessWidget {
         theme: readingTheme(Brightness.light),
         darkTheme: readingTheme(Brightness.dark),
         themeMode: theme.themeMode,
-        home: UpdateGate(
+        builder: (context, child) => UpdateGate(
           checkUpdate: checkUpdate,
-          child: home ?? const InitialScreen(),
+          child: child ?? const SizedBox.shrink(),
         ),
+        home: home ?? const InitialScreen(),
       ),
     ),
   );
 }
 
 class UpdateGate extends StatefulWidget {
-  const UpdateGate({super.key, required this.checkUpdate, required this.child});
+  const UpdateGate({
+    super.key,
+    required this.checkUpdate,
+    required this.child,
+    this.openStore = openPlayStore,
+  });
   final Future<bool> Function() checkUpdate;
   final Widget child;
+  final Future<bool> Function() openStore;
   @override
   State<UpdateGate> createState() => _UpdateGateState();
 }
 
 class _UpdateGateState extends State<UpdateGate> {
   bool _available = false;
+  bool _openingStore = false;
   @override
   void initState() {
     super.initState();
@@ -122,19 +132,20 @@ class _UpdateGateState extends State<UpdateGate> {
       final available = await widget.checkUpdate().timeout(
         const Duration(seconds: 6),
       );
-      if (mounted) setState(() => _available = available);
+      if (mounted) {
+        if (available) FocusManager.instance.primaryFocus?.unfocus();
+        setState(() => _available = available);
+      }
     } on Object catch (_) {
-      /* An optional update check must not block local use. */
+      // Without a valid version requirement, preserve access to local books.
     }
   }
 
   Future<void> _openStore() async {
+    if (_openingStore) return;
+    setState(() => _openingStore = true);
     try {
-      final opened = await launchUrl(
-        Uri.parse(
-          'https://play.google.com/store/apps/details?id=edu.cpp.reading_tracker',
-        ),
-      );
+      final opened = await widget.openStore();
       if (!opened) throw StateError('Store unavailable');
     } on Object catch (_) {
       if (mounted) {
@@ -144,54 +155,42 @@ class _UpdateGateState extends State<UpdateGate> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _openingStore = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => !_available
-      ? widget.child
-      : Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.system_update, size: 56),
-                  const Text('New Update Available!'),
-                  Wrap(
-                    spacing: 16,
-                    children: [
-                      TextButton(
-                        onPressed: () => setState(() => _available = false),
-                        child: const Text('Update Later'),
-                      ),
-                      ElevatedButton(
-                        onPressed: _openStore,
-                        child: const Text('Update Now'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      Offstage(
+        offstage: _available,
+        child: ExcludeFocus(
+          excluding: _available,
+          child: TickerMode(enabled: !_available, child: widget.child),
+        ),
+      ),
+      if (_available)
+        AppUpdateScreen(onUpdate: _openStore, openingStore: _openingStore),
+    ],
+  );
 }
+
+Future<bool> openPlayStore() => launchUrl(
+  Uri.parse(
+    'https://play.google.com/store/apps/details?id=edu.cpp.reading_tracker',
+  ),
+  mode: LaunchMode.externalApplication,
+);
 
 class InitialScreen extends StatelessWidget {
   const InitialScreen({super.key});
   @override
-  Widget build(BuildContext context) => StreamBuilder<User?>(
-    stream: FirebaseAuth.instance.userChanges(),
-    initialData: FirebaseAuth.instance.currentUser,
-    builder: (context, snapshot) {
-      final user = snapshot.data;
-      final allowed =
-          user != null &&
-          (user.emailVerified ||
-              user.providerData.any((p) => p.providerId == 'google.com'));
-      return allowed ? MainScreen(key: ValueKey(user.uid)) : LoginPage();
-    },
+  Widget build(BuildContext context) => SessionGate(
+    changes: FirebaseAuth.instance.userChanges(),
+    initialUser: FirebaseAuth.instance.currentUser,
+    signedIn: (user) => MainScreen(key: ValueKey(user.uid)),
+    signedOut: (notice) => LoginPage(notice: notice),
   );
 }

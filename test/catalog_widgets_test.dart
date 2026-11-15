@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:reading_tracker/screens/add_book_screen.dart';
 import 'package:reading_tracker/services/catalog_service.dart';
 import 'package:reading_tracker/services/import_service.dart';
-import 'package:reading_tracker/widgets/book_import_dialog.dart';
+import 'package:reading_tracker/screens/book_import_screen.dart';
 
 http.Response matches(String title) => http.Response(
   jsonEncode({
@@ -40,7 +40,7 @@ void main() {
               onPressed: () async {
                 imported = await showDialog<List<ImportEntry>>(
                   context: context,
-                  builder: (_) => BookImportDialog(catalog: catalog),
+                  builder: (_) => BookImportScreen(catalog: catalog),
                 );
                 closed = true;
               },
@@ -56,7 +56,7 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, 'Import'));
     await tester.pump();
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.byTooltip('Cancel'));
     await tester.pumpAndSettle();
     response.complete(matches('First result'));
     await tester.pump();
@@ -157,7 +157,7 @@ void main() {
               onPressed: () async {
                 imported = await showDialog<List<ImportEntry>>(
                   context: context,
-                  builder: (_) => BookImportDialog(catalog: catalog),
+                  builder: (_) => BookImportScreen(catalog: catalog),
                 );
               },
               child: const Text('Open import'),
@@ -169,7 +169,7 @@ void main() {
     await tester.tap(find.text('Open import'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Original 22\nOther 4');
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.text('Review matches'));
     await tester.pumpAndSettle();
     expect(find.text('Matched title'), findsOneWidget);
     await tester.tap(find.byTooltip('Choose catalog match').first);
@@ -214,7 +214,7 @@ void main() {
               onPressed: () async {
                 imported = await showDialog<List<ImportEntry>>(
                   context: context,
-                  builder: (_) => BookImportDialog(catalog: catalog),
+                  builder: (_) => BookImportScreen(catalog: catalog),
                 );
               },
               child: const Text('Open import'),
@@ -249,7 +249,7 @@ void main() {
                 onPressed: () async {
                   imported = await showDialog<List<ImportEntry>>(
                     context: context,
-                    builder: (_) => BookImportDialog(catalog: catalog),
+                    builder: (_) => BookImportScreen(catalog: catalog),
                   );
                 },
                 child: const Text('Open import'),
@@ -261,7 +261,7 @@ void main() {
       await tester.tap(find.text('Open import'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'Original 22');
-      await tester.tap(find.text('Review'));
+      await tester.tap(find.text('Review matches'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Choose catalog match'));
       await tester.pumpAndSettle();

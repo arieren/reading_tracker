@@ -28,7 +28,7 @@ void main() {
         '',
         'javascript:alert(1)',
         'https://user:pass@example.com',
-        'example.com',
+        'not a website',
       ]) {
         await expectLater(store.add('Site', url), throwsFormatException);
       }

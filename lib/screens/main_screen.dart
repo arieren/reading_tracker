@@ -11,6 +11,7 @@ import 'add_book_screen.dart';
 import 'browse_screen.dart';
 import '../data/book_repository.dart';
 import '../widgets/account_button.dart';
+import '../widgets/library_overview.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -124,6 +125,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     await repository.sync(force: true);
   }
 
+  void _showLibraryOverview() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) => LibraryOverview(
+      repository: BookRepository.instance,
+      onNavigate: (index) {
+        Navigator.pop(sheetContext);
+        _onItemTapped(index);
+      },
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -134,14 +148,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               appBar: AppBar(
                 automaticallyImplyLeading: false,
                 leading: _selectedIndex == 0 ? const ReaderHelpButton() : null,
-                title: Text(
-                  'Reading Tracker',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    letterSpacing: 0,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+                titleSpacing: 8,
+                title: LibraryHeaderButton(onPressed: _showLibraryOverview),
                 actions: const [AccountButton(), SizedBox(width: 8)],
                 elevation: 0,
                 scrolledUnderElevation: 0,

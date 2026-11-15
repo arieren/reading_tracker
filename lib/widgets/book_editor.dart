@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../models/book.dart';
+import '../services/reading_page.dart';
 import '../models/book_codec.dart';
 import '../data/book_repository.dart';
 import 'book_cover.dart';
@@ -64,8 +65,8 @@ class _BookEditorState extends State<_BookEditor> {
         chapter: chapter,
         linkURL: _link.text == original.linkURL
             ? original.linkURL
-            : _link.text.trim(),
-        imageUrl: _image.text.trim(),
+            : normalizeWebAddress(_link.text),
+        imageUrl: normalizeWebAddress(_image.text),
         lastRead: original.lastRead,
       );
       await BookRepository.instance.save(edited, original: original);

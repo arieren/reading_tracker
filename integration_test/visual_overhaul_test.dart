@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:reading_tracker/data/book_repository.dart';
 import 'package:reading_tracker/models/book.dart';
 import 'package:reading_tracker/screens/main_screen.dart';
+import 'package:reading_tracker/screens/book_import_screen.dart';
 import 'package:reading_tracker/screens/reader_screen.dart';
 
 import 'package:reading_tracker/services/reading_position.dart';
@@ -42,8 +43,16 @@ void main() {
       currentUid: () => 'visual-rehearsal',
     );
     BookRepository.instance = repo;
+    final coverBytes = (await rootBundle.load('assets/google_logo.png')).buffer
+        .asUint8List();
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
+      if (request.uri.path == '/cover.png') {
+        request.response.headers.contentType = ContentType('image', 'png');
+        request.response.add(coverBytes);
+        await request.response.close();
+        return;
+      }
       final chapter =
           int.tryParse(request.uri.pathSegments.last.split('-').last) ?? 1;
       final title = request.uri.path.startsWith('/new/')
@@ -52,7 +61,7 @@ void main() {
       request.response.headers.contentType = ContentType.html;
       final newStory = request.uri.path.startsWith('/new/');
       request.response.write(
-        '<!doctype html><html><head><title>${newStory ? 'Atsumaru' : '$title - Chapter $chapter | Atsumaru'}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="background:#fffaf3;color:#30283d;font-family:sans-serif"><h1>$title</h1><h2 ${newStory ? 'data-current-chapter="$chapter"' : ''}>Chapter $chapter</h2><span data-media-type="Manhwa"></span><p>A fictional local page for reader verification.</p><div style="height:5000px;background:linear-gradient(#eee4f9,#d8eadf)"></div></body></html>',
+        '<!doctype html><html><head><title>${newStory ? 'Atsumaru' : '$title - Chapter $chapter | Atsumaru'}</title><meta property="og:image" content="http://127.0.0.1:${server.port}/cover.png"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="background:#fffaf3;color:#30283d;font-family:sans-serif"><h1>$title</h1><h2 ${newStory ? 'data-current-chapter="$chapter"' : ''}>Chapter $chapter</h2><span data-media-type="Manhwa"></span><p>A fictional local page for reader verification.</p><div style="height:5000px;background:linear-gradient(#eee4f9,#d8eadf)"></div></body></html>',
       );
       await request.response.close();
     });
@@ -103,6 +112,7 @@ void main() {
       await repo.sync(force: true);
       await reader('$base/story/chapter-1', book: repo.userBooks.single);
       await until(() => repo.userBooks.single.chapter == 1);
+      expect(repo.userBooks.single.imageUrl, '$base/cover.png');
       var web = tester
           .widget<WebViewWidget>(find.byType(WebViewWidget))
           .platform
@@ -193,6 +203,12 @@ void main() {
             .linkURL,
         '$base/new/chapter-5',
       );
+      expect(
+        repo.userBooks
+            .firstWhere((book) => book.title == 'New Adventure')
+            .imageUrl,
+        '$base/cover.png',
+      );
       await tester.tap(find.byTooltip('Close reader'));
       await until(() => find.byType(ReaderScreen).evaluate().isEmpty);
       debugPrint(
@@ -223,6 +239,7 @@ void main() {
 
       await tester.pumpWidget(app(const MainScreen()));
       await tester.pumpAndSettle();
+      await until(() => find.byType(RawImage).evaluate().isNotEmpty);
       await snapshot('home-light');
       await tester.tap(find.byTooltip('Edit New Adventure'));
       await tester.pumpAndSettle();
@@ -253,6 +270,19 @@ void main() {
       await tester.pumpWidget(app(const MainScreen(), dark: true));
       await tester.pumpAndSettle();
       await snapshot('home-dark');
+      await tester.tap(find.text('Library').last);
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('New Adventure'));
+      await tester.pumpAndSettle();
+      await snapshot('library-selection-dark');
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      await snapshot('delete-dialog-dark');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(app(const BookImportScreen(), dark: true));
+      await tester.pumpAndSettle();
+      await snapshot('import-dark');
       await tester.pumpWidget(
         app(const AuthForm(mode: AuthFormMode.login), dark: true),
       );
@@ -303,6 +333,30 @@ void main() {
       final compactMetadata = ReadingPageMetadata.fromMap(compact as Map);
       expect(compactMetadata.title, 'Break New World');
       expect(compactMetadata.chapter, 35);
+      fixtureReady = false;
+      await metadataController.loadHtmlString('''
+        <html><head><title>Chapter 9 | Independent Reader</title>
+          <meta property="og:site_name" content="Independent Reader">
+          <script type="application/ld+json">{"@type":"Book","name":"Moon Garden","genre":["Fantasy","Manhwa"],"image":{"url":"/covers/moon.jpg"}}</script>
+        </head><body><p>Chapter page on an unfamiliar website.</p></body></html>
+      ''', baseUrl: 'https://independent-reader.example/chapter/9');
+      await until(() => fixtureReady);
+      final genericValue = await metadataController
+          .runJavaScriptReturningResult(readingMetadataScript);
+      final genericMetadata = ReadingPageMetadata.fromWebViewResult(
+        genericValue,
+        'https://independent-reader.example/chapter/9',
+      );
+      expect(genericMetadata.title, 'Moon Garden');
+      expect(genericMetadata.chapter, 9);
+      expect(genericMetadata.type, 'Manhwa');
+      expect(
+        genericMetadata.image,
+        'https://independent-reader.example/covers/moon.jpg',
+      );
+      debugPrint(
+        'PASS: generic website title, cover, type and chapter capture without a site adapter.',
+      );
       debugPrint(
         'PASS: Atsu reader controls detect active story, chapter and media type.',
       );

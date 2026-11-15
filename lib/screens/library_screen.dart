@@ -100,7 +100,8 @@ class _LibraryScreenState extends State<LibraryScreen>
       floatingActionButton: _isEditingMode && _selectedBooks.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _deleteSelectedBooks,
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
               icon: Icon(Icons.delete),
               label: Text('Delete'),
               heroTag: 'delete',
@@ -369,14 +370,19 @@ class _LibraryScreenState extends State<LibraryScreen>
         }
       },
       child: Card(
-        elevation: isSelected ? 6.0 : 2.0,
+        elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: isSelected
-              ? BorderSide(color: Theme.of(context).primaryColor, width: 2)
+              ? BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                )
               : BorderSide.none,
         ),
-        color: Theme.of(context).cardColor,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.surfaceContainerLow,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -395,19 +401,27 @@ class _LibraryScreenState extends State<LibraryScreen>
                         icon: const Icon(Icons.more_horiz_rounded, size: 20),
                       ),
                     ),
-                  if (isSelected)
+                  if (_isEditingMode)
                     Positioned(
                       top: 8,
                       right: 8,
                       child: Container(
                         padding: EdgeInsets.all(2),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).scaffoldBackgroundColor,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerLow,
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          Icons.check_circle,
-                          color: Theme.of(context).primaryColor,
+                          isSelected
+                              ? Icons.check_rounded
+                              : Icons.circle_outlined,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.outline,
                           size: 24,
                         ),
                       ),
@@ -418,7 +432,9 @@ class _LibraryScreenState extends State<LibraryScreen>
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : Theme.of(context).colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.vertical(
                   bottom: Radius.circular(12),
                 ),
@@ -473,12 +489,12 @@ class _LibraryScreenState extends State<LibraryScreen>
         }
       },
       tileColor: isSelected
-          ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
           : Theme.of(context).cardColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: isSelected
-            ? BorderSide(color: Theme.of(context).primaryColor, width: 1)
+            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 1)
             : BorderSide.none,
       ),
       leading: Container(
@@ -521,7 +537,8 @@ class _LibraryScreenState extends State<LibraryScreen>
           Container(
             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+              color: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -538,7 +555,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               padding: const EdgeInsets.only(left: 8.0),
               child: Icon(
                 Icons.check_circle,
-                color: Theme.of(context).primaryColor,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
           if (!_isEditingMode)
@@ -582,7 +599,10 @@ class _LibraryScreenState extends State<LibraryScreen>
               Navigator.pop(context);
               _performDelete();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+            ),
             child: Text('Delete'),
           ),
         ],

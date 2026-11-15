@@ -65,9 +65,11 @@ class _BrowseScreenState extends State<BrowseScreen>
 
   Future<void> _open(String address) async {
     if (_opening) return;
-    final url = address.trim();
+    final url = normalizeWebAddress(address);
     if (!isReadingUrl(url)) {
-      setState(() => _error = 'Enter a full http:// or https:// address.');
+      setState(
+        () => _error = 'Enter a valid website address, such as example.com.',
+      );
       return;
     }
     FocusScope.of(context).unfocus();
@@ -122,7 +124,7 @@ class _BrowseScreenState extends State<BrowseScreen>
             autocorrect: false,
             decoration: InputDecoration(
               labelText: 'Website or reading link',
-              hintText: 'https://',
+              hintText: 'example.com',
               prefixIcon: const Icon(Icons.language_outlined),
               suffixIcon: IconButton(
                 tooltip: 'Open website',
@@ -242,13 +244,19 @@ class _SiteDialogState extends State<_SiteDialog> {
 
   Future<void> _save() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await widget.store.add(_name.text, _url.text);
       if (mounted) {
         Navigator.pop(
           context,
-          ReadingSite(name: _name.text.trim(), url: _url.text.trim()),
+          ReadingSite(
+            name: _name.text.trim(),
+            url: normalizeWebAddress(_url.text),
+          ),
         );
       }
     } on Object catch (error) {
@@ -265,53 +273,78 @@ class _SiteDialogState extends State<_SiteDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_busy,
-    child: AlertDialog(
-      title: const Text('Add website'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _name,
-              enabled: !_busy,
-              maxLength: 80,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _url,
-              enabled: !_busy,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Website address',
-                hintText: 'https://',
-              ),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+  Widget build(BuildContext context) {
+    final errorStyle = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.error, height: 1.4);
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        title: const Text('Add website'),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _name,
+                  enabled: !_busy,
+                  maxLength: 80,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Name'),
                 ),
-              ),
-          ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _url,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _save(),
+                  decoration: const InputDecoration(
+                    labelText: 'Website address',
+                    hintText: 'example.com',
+                  ),
+                ),
+                SizedBox(
+                  height:
+                      MediaQuery.textScalerOf(context)
+                              .scale(errorStyle?.fontSize ?? 12) *
+                          1.4 *
+                          3 +
+                      12,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          _error ?? '',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: errorStyle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _busy ? null : _save,
+            child: Text(_busy ? 'Saving…' : 'Save'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _save,
-          child: Text(_busy ? 'Saving…' : 'Save'),
-        ),
-      ],
-    ),
-  );
+    );
+  }
 }

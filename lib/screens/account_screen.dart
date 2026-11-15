@@ -6,8 +6,12 @@ import 'package:provider/provider.dart';
 
 import '../data/book_repository.dart';
 import '../services/auth_service.dart';
+import '../services/account_access_service.dart';
+import '../widgets/account_identity_summary.dart';
 import '../services/import_service.dart';
-import '../widgets/book_import_dialog.dart';
+import 'book_import_screen.dart';
+import 'account_access_screen.dart';
+import '../widgets/reading_source_setting.dart';
 import '../services/theme_provider.dart';
 import '../services/reading_position.dart';
 
@@ -41,9 +45,11 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _import() async {
-    final entries = await showDialog<List<ImportEntry>>(
-      context: context,
-      builder: (_) => const BookImportDialog(),
+    final entries = await Navigator.of(context).push<List<ImportEntry>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const BookImportScreen(),
+      ),
     );
     if (!mounted || entries == null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -132,6 +138,7 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
     final deletionPending = BookRepository.instance.deletionPending;
+    final user = FirebaseAuth.instance.currentUser;
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
@@ -156,9 +163,12 @@ class _AccountScreenState extends State<AccountScreen> {
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    FirebaseAuth.instance.currentUser?.email ?? 'Signed out',
-                  ),
+                  if (user == null)
+                    const Text('Signed out')
+                  else
+                    AccountIdentitySummary(
+                      account: AccountAccess.fromUser(user),
+                    ),
                   const SizedBox(height: 12),
                   Text(
                     '${BookRepository.instance.userBooks.length} stories on your shelf',
@@ -177,6 +187,24 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
             ],
             if (!deletionPending) ...[
+              ListTile(
+                leading: const Icon(Icons.manage_accounts_outlined),
+                title: const Text('Sign-in & security'),
+                subtitle: const Text(
+                  'Email, password and connected Google account',
+                ),
+                enabled: !_busy,
+                onTap: () async {
+                  await Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AccountAccessScreen(),
+                    ),
+                  );
+                  if (mounted) setState(() {});
+                },
+              ),
+              const ReadingSourceSetting(),
               SwitchListTile(
                 title: const Text('Dark Mode'),
                 value: theme.themeMode == ThemeMode.dark,

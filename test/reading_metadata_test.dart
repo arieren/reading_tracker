@@ -59,7 +59,7 @@ void main() {
     () {
       for (final entry in {
         'manwha': 'Manhwa',
-        'web novel': 'Novel',
+        'web novel': 'Light Novel',
         'light_novel': 'Light Novel',
       }.entries) {
         expect(

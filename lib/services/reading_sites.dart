@@ -46,7 +46,7 @@ class ReadingSiteStore {
 
   Future<void> add(String name, String url) async {
     name = name.trim();
-    url = url.trim();
+    url = normalizeWebAddress(url);
     if (name.isEmpty || name.length > 80) {
       throw const FormatException(
         'Enter a website name (up to 80 characters).',
@@ -54,7 +54,7 @@ class ReadingSiteStore {
     }
     if (!isReadingUrl(url)) {
       throw const FormatException(
-        'Enter a full http:// or https:// address without login details.',
+        'Enter a valid website address, such as example.com.',
       );
     }
     final sites = await load();

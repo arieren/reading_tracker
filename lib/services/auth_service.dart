@@ -5,21 +5,47 @@ import 'account_deletion_service.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';
 
+class GoogleAccountSelection {
+  const GoogleAccountSelection({
+    required this.id,
+    required this.email,
+    required this.credential,
+  });
+  final String id;
+  final String email;
+  final OAuthCredential credential;
+}
+
 class AuthService {
   static Future<void>? _googleInitialization;
   FirebaseAuth get _auth => FirebaseAuth.instance;
-  Future<OAuthCredential> _googleCredential() async {
+  Future<GoogleAccountSelection> selectGoogleAccount({
+    bool chooseAccount = false,
+  }) async {
     try {
       await (_googleInitialization ??= GoogleSignIn.instance.initialize());
     } on Object catch (_) {
       _googleInitialization = null;
       rethrow;
     }
+    // This clears Google's picker selection, not the Firebase app session.
+    if (chooseAccount) await GoogleSignIn.instance.signOut();
     final account = await GoogleSignIn.instance.authenticate();
-    return GoogleAuthProvider.credential(
-      idToken: account.authentication.idToken,
+    final token = account.authentication.idToken;
+    if (token == null || token.isEmpty) {
+      throw StateError(
+        'Google could not verify this account. Please try again.',
+      );
+    }
+    return GoogleAccountSelection(
+      id: account.id,
+      email: account.email,
+      credential: GoogleAuthProvider.credential(idToken: token),
     );
   }
+
+  Future<OAuthCredential> _googleCredential() async =>
+      (await selectGoogleAccount()).credential;
 
   Future<void> signInGoogle() async {
     if (kIsWeb) {
@@ -132,7 +158,19 @@ String authenticationError(Object error) {
       'network-request-failed' =>
         'Unable to connect. Please check your connection.',
       'requires-recent-login' =>
-        'Please sign in again before deleting your account.',
+        'Please verify your current sign-in before changing your account.',
+      'credential-already-in-use' ||
+      'account-exists-with-different-credential' => 'That sign-in belongs to another Reading Tracker account. No libraries were merged.',
+      'user-mismatch' =>
+        'Choose the Google account currently linked to this account.',
+      'invalid-email' => 'Enter a valid email address.',
+      'provider-already-linked' => 'This sign-in method is already connected.',
+      'user-token-expired' || 'invalid-user-token' => 'Please sign in again. If you verified a new email, use the new address with your existing password.',
+      'popup-closed-by-user' ||
+      'cancelled-popup-request' => 'Google sign-in was cancelled.',
+      'popup-blocked' => 'Allow the Google sign-in popup and try again.',
+      'operation-not-allowed' =>
+        'This sign-in change is unavailable. Please try again later.',
       _ => 'Unable to complete this request. Please try again.',
     };
   }

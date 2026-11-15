@@ -4,7 +4,7 @@ Tracks novels, manga, manhwa and light novels with saved chapters, covers and re
 
 ## Development
 
-Use Flutter 3.50.0 stable / Dart 3.14. Android uses SDK 36, AGP 9.3.1, Gradle 9.5.0, Kotlin 2.4.21 and NDK 28.2.13676358. Run `flutter doctor` before building; install the requested Android components and accept licenses with `flutter doctor --android-licenses`.
+Use Flutter 3.50.0 stable / Dart 3.14. Android uses SDK 36, AGP 9.3.1, Gradle 9.5.0, AGP's built-in Kotlin and NDK 28.2.13676358. Run `flutter doctor` before building; install the requested Android components and accept licenses with `flutter doctor --android-licenses`.
 
 ```sh
 flutter pub get
@@ -70,3 +70,6 @@ Add Book and the import preview share `CatalogService`, using the public Tenrai 
 Search debounces input, ignores stale results, shares repeated in-flight requests, caches up to 40 queries for five minutes, and spaces request starts below the documented public limits. HTTP rate limits, timeouts and invalid responses are shown separately from successful empty searches. Import lookups run sequentially; canceling discards the import before any books are saved. Imports keep the entered chapter when selecting a match and remain usable without catalog access. Saved books remain in Hive and Firestore and do not depend on this API.
 
 Normal tests use recorded responses. To verify actual API connectivity, run `flutter test test/catalog_live_test.dart --dart-define=LIVE_CATALOG_TEST=true`. This optional check depends on the provider being online; it is skipped in the normal test suite.
+Preferred reading sites, exact-title link lookup, cover capture and provider limitations are documented in [reading sources](docs/reading-sources.md).
+
+Android enables AGP built-in Kotlin. The app and Firebase modules were audited with legacy KGP absent at runtime. The Flutter 3.50 source scanner still warns about conditional legacy declarations in Firebase build scripts; downloaded plugin caches should not be edited to hide this warning.

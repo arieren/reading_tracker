@@ -1,7 +1,6 @@
 import '../widgets/reading_dialogs.dart';
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
@@ -87,6 +86,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       _closing = false;
   int _progress = 0;
   bool _adding = false;
+  bool _coverLookupAttempted = false;
   String? _error, _savedUrl;
   Timer? _saveTimer;
   Timer? _positionTimer;
@@ -191,12 +191,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       final value = await _controller
           .runJavaScriptReturningResult(readingMetadataScript)
           .timeout(const Duration(seconds: 3));
-      dynamic data = value;
-      for (var i = 0; i < 2 && data is String; i++) {
-        data = jsonDecode(data);
-      }
-      if (data is! Map || !mounted || url != _url) return null;
-      return ReadingPageMetadata.fromMap(data);
+      if (!mounted || url != _url) return null;
+      return ReadingPageMetadata.fromWebViewResult(value, url);
     } on Object {
       // Missing website metadata must not prevent a manual bookmark.
       return null;
@@ -206,12 +202,20 @@ class _ReaderScreenState extends State<ReaderScreen>
   Future<void> _captureAndSave({bool explicit = false}) async {
     if (_loading || _error != null || !isReadingUrl(_url)) return;
     final candidate = _url;
-    final metadata = await _metadata();
+    var metadata = await _metadata();
     if (!mounted || candidate != _url) return;
     final book = _book;
     if (book == null) {
       if (mounted) setState(() {});
       return;
+    }
+    if ((book.imageUrl ?? '').isEmpty && !_coverLookupAttempted) {
+      _coverLookupAttempted = true;
+      metadata = await ReadingMetadataService().complete(
+        candidate,
+        metadata ?? ReadingPageMetadata(title: book.title),
+      );
+      if (!mounted || candidate != _url) return;
     }
     final matched = pageMatchesBook(
       savedUrl: book.linkURL ?? '',
@@ -227,7 +231,8 @@ class _ReaderScreenState extends State<ReaderScreen>
         ? metadata?.chapter
         : null;
     if (_savedUrl == candidate &&
-        (chapter == null || chapter == book.chapter)) {
+        (chapter == null || chapter == book.chapter) &&
+        !((book.imageUrl ?? '').isEmpty && metadata?.image != null)) {
       return;
     }
     setState(() => _saving = true);
@@ -241,7 +246,9 @@ class _ReaderScreenState extends State<ReaderScreen>
           title: current.title,
           type: current.type,
           chapter: chapter ?? current.chapter,
-          imageUrl: current.imageUrl,
+          imageUrl: (current.imageUrl ?? '').isEmpty
+              ? metadata?.image
+              : current.imageUrl,
           linkURL: candidate,
           lastRead: DateTime.now(),
         ),
@@ -404,7 +411,9 @@ class _ReaderScreenState extends State<ReaderScreen>
             type: result.type,
             chapter: result.chapter,
             linkURL: bookmarkUrl,
-            imageUrl: existing.imageUrl,
+            imageUrl: (existing.imageUrl ?? '').isEmpty
+                ? metadata.image
+                : existing.imageUrl,
             lastRead: DateTime.now(),
           ),
           original: existing,

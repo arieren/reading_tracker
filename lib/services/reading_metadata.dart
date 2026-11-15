@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'page_document.dart';
+
+import 'reading_link_service.dart' show atsuPosterUrl;
+
 import 'reading_page.dart';
 
 /// Reads public page metadata and the active reader's controls. It deliberately
@@ -34,6 +38,7 @@ const readingMetadataScript = r'''
           /^.{1,40}\s+info$/i.test(text(el)));
         if (label) {
           data.type = text(label).replace(/\s+info$/i, '');
+          if (/^novel$/i.test(data.type)) data.type = 'Light Novel';
           data.title = text(label.nextElementSibling);
         }
       }
@@ -62,6 +67,16 @@ const readingMetadataScript = r'''
   }
   if (!data.type) data.type = meta('meta[property="book:type"],meta[name="media-type"]') ||
     document.querySelector('[data-media-type]')?.getAttribute('data-media-type') || '';
+  const snippets = [];
+  let size = 0;
+  const selectors = 'title,meta[property^="og:"],meta[name^="twitter:"],meta[property="book:type"],meta[name="media-type"],script[type="application/ld+json"],h1,[data-series-title],[data-media-type],dl,table,.post-content_item,.info-row,[itemprop="genre"],img[itemprop="image"],link[rel="image_src"]';
+  for (const node of [...document.querySelectorAll(selectors)].slice(0,100)) {
+    const fragment = node.outerHTML;
+    if (fragment.length > 100000 || size + fragment.length > 250000) continue;
+    snippets.push(fragment); size += fragment.length;
+  }
+  data.markup = snippets.join('\n');
+  if (data.image) { try { data.image = new URL(data.image, document.baseURI).href; } catch (_) { data.image = ''; } }
   return JSON.stringify(data);
 })()
 ''';
@@ -80,6 +95,34 @@ class ReadingPageMetadata {
   String get matchingPageTitle =>
       chapter == null ? title : '$title - Chapter $chapter';
 
+  factory ReadingPageMetadata.fromWebViewResult(dynamic value, String url) {
+    dynamic data = value;
+    for (var i = 0; i < 2 && data is String; i++) {
+      data = jsonDecode(data);
+    }
+    if (data is! Map) throw const FormatException('Invalid page metadata.');
+    final fields = data['markup'] is String
+        ? extractPageDocument(data['markup'] as String, url)
+        : <String, dynamic>{};
+    for (final entry in data.entries) {
+      if (entry.key == 'markup' ||
+          entry.value is! String ||
+          (entry.value as String).isEmpty) {
+        continue;
+      }
+      if (entry.key == 'image' && !isReadingUrl(entry.value as String)) {
+        continue;
+      }
+      if (entry.key == 'type') {
+        final type = readingTypeFromText(entry.value as String);
+        if (type != null) fields['type'] = type;
+        continue;
+      }
+      fields[entry.key.toString()] = entry.value;
+    }
+    return ReadingPageMetadata.fromMap(fields);
+  }
+
   factory ReadingPageMetadata.fromMap(Map<dynamic, dynamic> data) {
     String field(String key) =>
         data[key] is String ? (data[key] as String).trim() : '';
@@ -97,10 +140,15 @@ class ReadingPageMetadata {
       documentTitle,
       field('heading'),
     ]) {
-      final cleaned = suggestedStoryTitle(candidate);
+      final cleaned = suggestedStoryTitle(
+        stripReadingSiteName(candidate, field('siteName')),
+      );
       if (cleaned.isEmpty ||
+          (field('siteName').isNotEmpty &&
+              normalizedStoryTitle(cleaned) ==
+                  normalizedStoryTitle(field('siteName'))) ||
           RegExp(
-            r'^(?:atsumaru|atsu|webtoon|manga plus|home|chapter\s*\d*)$',
+            r'^(?:atsumaru|atsu|webtoon|manga plus|home|reader|read|details|chapter\s*\d*)$',
             caseSensitive: false,
           ).hasMatch(cleaned)) {
         continue;
@@ -108,15 +156,17 @@ class ReadingPageMetadata {
       title = cleaned;
       break;
     }
-    final type = switch (field('type')
-        .toLowerCase()
-        .replaceAll(RegExp(r'[\s_-]+'), ' ')) {
-      'manhwa' || 'manwha' => 'Manhwa',
-      'manga' || 'manhua' => 'Manga',
-      'light novel' => 'Light Novel',
-      'novel' || 'web novel' => 'Novel',
-      _ => null,
-    };
+    final type = field('medium').toLowerCase() == 'novel'
+        ? 'Light Novel'
+        : switch (field('type')
+              .toLowerCase()
+              .replaceAll(RegExp(r'[\s_-]+'), ' ')) {
+            'manhwa' || 'manwha' => 'Manhwa',
+            'manga' || 'manhua' => 'Manga',
+            'light novel' || 'web novel' => 'Light Novel',
+            'novel' => 'Novel',
+            _ => null,
+          };
     final image = field('image');
     return ReadingPageMetadata(
       title: title,
@@ -127,8 +177,8 @@ class ReadingPageMetadata {
   }
 }
 
-/// Only invoked when saving a new bookmark with incomplete page details.
-/// Automatic reading updates never depend on this optional network request.
+/// Completes new bookmarks and retries a missing cover once per reader opening.
+/// Lookup failure preserves manual saving and locally stored progress.
 class ReadingMetadataService {
   ReadingMetadataService({this.request = http.get});
   final Future<http.Response> Function(Uri) request;
@@ -142,36 +192,47 @@ class ReadingMetadataService {
     if (uri == null ||
         !isReadingUrl(url) ||
         !(uri.host == 'atsu.moe' || uri.host.endsWith('.atsu.moe')) ||
-        parts.length != 3 ||
-        parts.first != 'read' ||
+        !([2, 3].contains(parts.length)) ||
+        !['read', 'read-novel', 'manga', 'novel'].contains(parts.first) ||
         !RegExp(r'^[A-Za-z0-9_-]{1,100}$').hasMatch(parts[1]) ||
-        (page.title.isNotEmpty && page.type != null)) {
-      return page;
+        (page.title.isNotEmpty && page.type != null && page.image != null)) {
+      return _completeCover(url, page);
     }
     try {
       final response = await request(
-        Uri.https('atsu.moe', '/api/manga/info', {'mangaId': parts[1]}),
+        Uri.https('atsu.moe', '/api/manga/page', {'id': parts[1]}),
       ).timeout(const Duration(seconds: 3));
       if (response.statusCode != 200 || response.bodyBytes.length > 2000000) {
         return page;
       }
-      final data = jsonDecode(response.body);
+      final responseData = jsonDecode(response.body);
+      final data = responseData is Map ? responseData['mangaPage'] : null;
       if (data is! Map || data['id'] != parts[1] || data['title'] is! String) {
         return page;
       }
       final details = ReadingPageMetadata.fromMap({
         'title': data['title'],
         'type': data['type'],
+        'medium': data['medium'],
       });
+      final names = [
+        details.title,
+        data['englishTitle'],
+        ...(data['otherNames'] is List
+            ? data['otherNames'] as List
+            : <dynamic>[]),
+      ];
       if (page.title.isNotEmpty &&
-          normalizedStoryTitle(page.title) !=
-              normalizedStoryTitle(details.title)) {
+          !names.whereType<String>().any(
+            (name) =>
+                normalizedStoryTitle(page.title) == normalizedStoryTitle(name),
+          )) {
         return page;
       }
       int? chapter;
       if (data['chapters'] is List) {
         for (final entry in data['chapters'] as List) {
-          if (entry is Map && entry['id'] == parts[2]) {
+          if (entry is Map && parts.length == 3 && entry['id'] == parts[2]) {
             final number = entry['number'];
             if (number is num &&
                 number.isFinite &&
@@ -188,7 +249,35 @@ class ReadingMetadataService {
         title: page.title.isEmpty ? details.title : page.title,
         chapter: page.chapter ?? chapter,
         type: page.type ?? details.type,
-        image: page.image,
+        image: page.image ?? atsuPosterUrl(data['poster']),
+      );
+    } on Object {
+      return page;
+    }
+  }
+
+  Future<ReadingPageMetadata> _completeCover(
+    String url,
+    ReadingPageMetadata page,
+  ) async {
+    if ((page.image != null && page.title.isNotEmpty && page.type != null) ||
+        !isReadingUrl(url)) {
+      return page;
+    }
+    try {
+      final response = await request(Uri.parse(url))
+          .timeout(const Duration(seconds: 3));
+      if (response.statusCode != 200 || response.bodyBytes.length > 2000000) {
+        return page;
+      }
+      final details = ReadingPageMetadata.fromMap(
+        extractPageDocument(utf8.decode(response.bodyBytes), url),
+      );
+      return ReadingPageMetadata(
+        title: page.title.isEmpty ? details.title : page.title,
+        chapter: page.chapter ?? details.chapter,
+        type: page.type ?? details.type,
+        image: page.image ?? details.image,
       );
     } on Object {
       return page;

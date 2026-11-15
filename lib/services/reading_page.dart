@@ -6,6 +6,41 @@ bool isReadingUrl(String? value) =>
     validWebUrl(value) &&
     (Uri.tryParse(value)?.userInfo.isEmpty ?? false);
 
+/// Normalize browser-style form input without treating ordinary notes as URLs.
+String normalizeWebAddress(String value) {
+  final input = value.trim();
+  if (input.isEmpty || isReadingUrl(input)) return input;
+  final hostPort = RegExp(
+    r'^(?:[^\s/:?#]+\.[^\s/:?#]+|localhost):\d+(?:[/?#]|$)',
+    caseSensitive: false,
+  ).hasMatch(input);
+  if (input.contains('://') ||
+      (RegExp(r'^[a-z][a-z0-9+.-]*:', caseSensitive: false).hasMatch(input) &&
+          !hostPort)) {
+    return input;
+  }
+  final candidate = Uri.tryParse(
+    input.startsWith('//') ? 'https:$input' : 'https://$input',
+  );
+  if (candidate == null || !isReadingUrl(candidate.toString())) return input;
+  final host = candidate.host;
+  final labels = host.split('.');
+  final domain =
+      labels.length > 1 &&
+      labels.every(
+        (label) => RegExp(
+          r'^[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?$',
+          unicode: true,
+        ).hasMatch(label),
+      );
+  if (!domain &&
+      host != 'localhost' &&
+      !(input.startsWith('[') && host.contains(':'))) {
+    return input;
+  }
+  return candidate.toString();
+}
+
 Uri atsuTitleSearch(String title) =>
     Uri.https('atsu.moe', '/explore', {'search': title.trim()});
 

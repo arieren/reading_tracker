@@ -8,9 +8,10 @@ import '../services/auth_service.dart';
 enum AuthFormMode { login, signup, reset }
 
 class AuthForm extends StatefulWidget {
-  const AuthForm({super.key, required this.mode, this.auth});
+  const AuthForm({super.key, required this.mode, this.auth, this.notice});
   final AuthService? auth;
   final AuthFormMode mode;
+  final String? notice;
   @override
   State<AuthForm> createState() => _AuthFormState();
 }
@@ -85,6 +86,11 @@ class _AuthFormState extends State<AuthForm> with ResetDraftOnReturn<AuthForm> {
         setState(() {
           _failed = true;
           _message = authenticationError(error);
+          if (google &&
+              _message ==
+                  'Unable to complete this request. Please try again.') {
+            _message = 'Google could not sign in. If you recently changed your email, use email and password, then choose Change Google account in Sign-in & security. Changing your email does not switch the linked Google account.';
+          }
         });
       }
     } finally {
@@ -180,6 +186,11 @@ class _AuthFormState extends State<AuthForm> with ResetDraftOnReturn<AuthForm> {
                           ),
                         ),
                         const SizedBox(height: 32),
+                        if (widget.notice != null && _message == null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Text(widget.notice!),
+                          ),
                         if (_message != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
